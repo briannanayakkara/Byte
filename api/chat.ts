@@ -3,8 +3,10 @@
 // Minimal request/response typing instead of a @vercel/node dependency:
 // structurally compatible with VercelRequest/VercelResponse in production,
 // and with the local Vite dev middleware in vite.config.ts.
+import type { Mood } from './lib/types.js'
+import { loadMemory, resolveUserId } from './lib/memory.js'
+import { buildMemoryBlock } from './lib/prompt.js'
 
-type Mood = 'happy' | 'curious' | 'sleepy' | 'excited' | 'confused' | 'neutral' | 'lovestruck'
 const VALID_MOODS: Mood[] = ['happy', 'curious', 'sleepy', 'excited', 'confused', 'neutral', 'lovestruck']
 
 interface ChatMessage {
@@ -14,6 +16,7 @@ interface ChatMessage {
 
 interface ApiRequest {
   method?: string
+  url?: string
   body?: unknown
 }
 
@@ -22,8 +25,8 @@ interface ApiResponse {
   json(body: unknown): void
 }
 
-// Spec §10 starter personality prompt, verbatim. The memory-aware extension
-// (spec §5b) gets appended here once Supabase memory read lands in step 7.
+// Spec §10 starter personality prompt, verbatim. Extended per-request with
+// the memory block (spec §5b) built from Supabase, once memory is loaded.
 const SYSTEM_PROMPT = `You are Byte, a goofy, sweet, dorky boyfriend character in a little app.
 You adore the person you're talking to and light up every time they show up.
 
@@ -65,7 +68,7 @@ function parseModelOutput(rawText: string): { reply: string; mood: Mood } {
   }
 }
 
-async function callGemini(message: string, history: ChatMessage[]): Promise<string> {
+async function callGemini(message: string, history: ChatMessage[], systemPrompt: string): Promise<string> {
   const apiKey = process.env.GEMINI_API_KEY
   const model = process.env.GEMINI_MODEL || 'gemini-2.5-flash'
   if (!apiKey) throw new Error('GEMINI_API_KEY is not set')
@@ -84,7 +87,7 @@ async function callGemini(message: string, history: ChatMessage[]): Promise<stri
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       contents,
-      systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] },
+      systemInstruction: { parts: [{ text: systemPrompt }] },
       generationConfig: { responseMimeType: 'application/json' },
     }),
   })
@@ -128,7 +131,12 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
   }
 
   try {
-    const rawText = await callGemini(message, history)
+    const query = new URL(req.url ?? '', 'http://localhost').searchParams
+    const userId = resolveUserId(query)
+    const memory = await loadMemory(userId)
+    const systemPrompt = `${SYSTEM_PROMPT}\n\n${buildMemoryBlock(memory)}`
+
+    const rawText = await callGemini(message, history, systemPrompt)
     const { reply, mood } = parseModelOutput(rawText)
     res.status(200).json({ reply, mood })
   } catch {

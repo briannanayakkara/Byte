@@ -37,7 +37,7 @@ function apiChatDevMiddleware(): Plugin {
                 res.end(JSON.stringify(data))
               },
             }
-            await handler({ method: req.method, body }, apiRes)
+            await handler({ method: req.method, url: req.url, body }, apiRes)
           } catch (err) {
             res.statusCode = 500
             res.setHeader('Content-Type', 'application/json')
