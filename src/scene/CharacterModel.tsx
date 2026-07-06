@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef } from 'react'
 import { useFrame } from '@react-three/fiber'
-import { useGLTF } from '@react-three/drei'
+import { useAnimations, useGLTF } from '@react-three/drei'
 import * as THREE from 'three'
-import { aimBoneAt, boneWorldBounds, worldTiltLocalQuat } from './boneUtils'
+import { aimBoneAt, worldTiltLocalQuat } from './boneUtils'
 import { CHARACTERS, DEFAULT_CHARACTER_ID, type CharacterConfig } from './characters'
 import { createHeartGeometry } from './heartShape'
 import { MOOD_POSES, type MoodPose } from './moodPoses'
@@ -34,9 +34,6 @@ const HEART_COUNT = 3
 const HEART_HALO_RADIUS = 0.28
 const HEART_HALO_HEIGHT = 0.55
 const HEART_HALO_SPEED = 1.4 // radians/sec
-// Bone-to-bone span misses the head above the topmost bone and the sole
-// below the lowest, so pad the measured height a bit before scaling to it.
-const BONE_HEIGHT_MARGIN = 1.0
 
 interface CharacterModelProps {
   mood?: Mood
@@ -46,8 +43,9 @@ interface CharacterModelProps {
 export function CharacterModel({ mood = 'neutral', characterId = DEFAULT_CHARACTER_ID }: CharacterModelProps) {
   const character: CharacterConfig =
     CHARACTERS.find((c) => c.id === characterId) ?? CHARACTERS[0]
-  const { scene } = useGLTF(character.modelPath)
+  const { scene, animations } = useGLTF(character.modelPath)
   const group = useRef<THREE.Group>(null)
+  const { actions } = useAnimations(animations, group)
   const basePosition = useRef(new THREE.Vector3())
 
   const headBone = useRef<THREE.Object3D | null>(null)
@@ -90,40 +88,56 @@ export function CharacterModel({ mood = 'neutral', characterId = DEFAULT_CHARACT
     const rig = character.rig
 
     // Normalize whatever native scale/units the source file uses to a
-    // consistent on-screen size, centered on the origin. Prefer bone world
-    // positions over mesh Box3 -- see boneWorldBounds for why (mesh bind-pose
-    // geometry can be authored in a different reference arrangement than
-    // what's actually rendered, which silently produces the wrong size).
-    const boneBox = boneWorldBounds(scene)
-    const box = boneBox ?? new THREE.Box3().setFromObject(scene)
+    // consistent on-screen size, centered on the origin.
+    //
+    // Tried measuring from bone world positions instead of mesh geometry
+    // (see git history) to work around a Fortnite-rigged character whose
+    // mesh bind-pose data didn't match its rendered pose -- but that rig
+    // isn't used anymore, and bone positions have their own failure mode:
+    // Gobot's head bone sits at its neck, well below the top of its
+    // (deliberately oversized, cute) round head, so measuring bone-to-bone
+    // span badly undersized it. Plain mesh Box3 is correct for both
+    // characters actually in use, so keep it simple.
+    const box = new THREE.Box3().setFromObject(scene)
     const size = box.getSize(new THREE.Vector3())
     const center = box.getCenter(new THREE.Vector3())
-    const scale = character.targetHeight / (size.y * BONE_HEIGHT_MARGIN)
+    const scale = character.targetHeight / size.y
     group.current.scale.setScalar(scale)
     basePosition.current.set(-center.x * scale, -center.y * scale, -center.z * scale)
     group.current.position.copy(basePosition.current)
 
-    // Bring T-pose arms down to a resting pose. Aim each upper-arm bone at
-    // its elbow child, re-pointing that world-space direction mostly
-    // downward while preserving which side it leans to (so it reads as
-    // "hanging at the side," not snapped to dead-center). Bone names come
-    // from the per-character rig config since every rig names them
-    // differently (compare the smurf's Sonic-Rumble-style names to Daffy's
-    // standard UE4/Fortnite mannequin names).
-    for (const [shoulderName, elbowName] of rig.armPairs) {
-      const shoulder = scene.getObjectByName(shoulderName)
-      const elbow = scene.getObjectByName(elbowName)
-      if (!shoulder || !elbow) continue
-      const shoulderPos = new THREE.Vector3()
-      const elbowPos = new THREE.Vector3()
-      shoulder.getWorldPosition(shoulderPos)
-      elbow.getWorldPosition(elbowPos)
-      const sideSign = Math.sign(elbowPos.x - shoulderPos.x) || 1
-      aimBoneAt(shoulder, elbow, new THREE.Vector3(sideSign * 0.2, -0.95, 0.1))
+    // If this rig ships a real idle animation, play it instead of the
+    // procedural T-pose fix -- a baked clip already poses the arms properly.
+    if (rig.idleAnimationName) {
+      for (const name of Object.keys(actions)) {
+        if (name !== rig.idleAnimationName) actions[name]?.stop()
+      }
+      actions[rig.idleAnimationName]?.reset().play()
+    } else {
+      // Bring T-pose arms down to a resting pose. Aim each upper-arm bone at
+      // its elbow child, re-pointing that world-space direction mostly
+      // downward while preserving which side it leans to (so it reads as
+      // "hanging at the side," not snapped to dead-center). Bone names come
+      // from the per-character rig config since every rig names them
+      // differently.
+      for (const [shoulderName, elbowName] of rig.armPairs) {
+        const shoulder = scene.getObjectByName(shoulderName)
+        const elbow = scene.getObjectByName(elbowName)
+        if (!shoulder || !elbow) continue
+        const shoulderPos = new THREE.Vector3()
+        const elbowPos = new THREE.Vector3()
+        shoulder.getWorldPosition(shoulderPos)
+        elbow.getWorldPosition(elbowPos)
+        const sideSign = Math.sign(elbowPos.x - shoulderPos.x) || 1
+        aimBoneAt(shoulder, elbow, new THREE.Vector3(sideSign * 0.2, -0.95, 0.1))
+      }
     }
 
     headBone.current = rig.headBoneName ? (scene.getObjectByName(rig.headBoneName) ?? null) : null
     if (headBone.current) {
+      // For an animated rig this is just a starting value -- it's
+      // recomputed fresh every frame in useFrame instead, since the
+      // animation mixer redrives the head bone's orientation continuously.
       headBone.current.getWorldQuaternion(headBaseWorldQuat.current)
       headBone.current.parent?.getWorldQuaternion(headParentWorldQuat.current)
     }
@@ -144,11 +158,15 @@ export function CharacterModel({ mood = 'neutral', characterId = DEFAULT_CHARACT
       pose[key] = THREE.MathUtils.damp(pose[key], targetPose[key], MOOD_TRANSITION_RATE, delta)
     }
 
-    if (group.current) {
+    const hasIdleAnimation = Boolean(character.rig.idleAnimationName)
+
+    // A baked idle clip already bobs/breathes -- adding the procedural
+    // version on top would double up and look jittery.
+    if (group.current && !hasIdleAnimation) {
       group.current.position.y = basePosition.current.y + Math.sin(t * pose.bobSpeed) * pose.bobAmplitude
     }
 
-    if (chestBone.current) {
+    if (chestBone.current && !hasIdleAnimation) {
       const breathe = 1 + Math.sin(t * pose.breatheSpeed) * pose.breatheAmplitude
       chestBone.current.scale.set(
         chestBaseScale.current.x * breathe,
@@ -158,6 +176,20 @@ export function CharacterModel({ mood = 'neutral', characterId = DEFAULT_CHARACT
     }
 
     if (headBone.current) {
+      // For an animated rig, the mixer redrives this bone's orientation every
+      // frame BEFORE this callback runs (useAnimations' own useFrame is
+      // registered first, above), so re-reading it fresh each frame gives
+      // the animation's current pose as our "base" -- reusing the one-time
+      // snapshot from the effect would layer our tilt on top of a pose from
+      // a completely different point in the animation. For a static rig,
+      // nothing else touches this bone, so the one-time snapshot is correct
+      // and re-reading every frame would wrongly compound our own tilt from
+      // the previous frame on top of itself.
+      if (hasIdleAnimation) {
+        headBone.current.getWorldQuaternion(headBaseWorldQuat.current)
+        headBone.current.parent?.getWorldQuaternion(headParentWorldQuat.current)
+      }
+
       if (t >= lookNextPickAt.current) {
         lookTarget.current = {
           yaw: THREE.MathUtils.randFloatSpread(2) * LOOK_MAX_YAW,
