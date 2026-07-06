@@ -5,6 +5,7 @@
 // and with the local Vite dev middleware in vite.config.ts.
 import type { Mood } from './lib/types.js'
 import { loadMemory, resolveUserId } from './lib/memory.js'
+import { saveTurn } from './lib/memory-write.js'
 import { buildMemoryBlock } from './lib/prompt.js'
 
 const VALID_MOODS: Mood[] = ['happy', 'curious', 'sleepy', 'excited', 'confused', 'neutral', 'lovestruck']
@@ -55,16 +56,17 @@ function stripCodeFences(text: string): string {
   return fenced ? fenced[1] : text
 }
 
-function parseModelOutput(rawText: string): { reply: string; mood: Mood } {
+function parseModelOutput(rawText: string): { reply: string; mood: Mood; newFacts: string[] } {
   try {
     const parsed = JSON.parse(stripCodeFences(rawText).trim())
     const reply = typeof parsed.reply === 'string' ? parsed.reply : null
     const mood = VALID_MOODS.includes(parsed.mood) ? (parsed.mood as Mood) : 'neutral'
+    const newFacts = Array.isArray(parsed.new_facts) ? parsed.new_facts.filter((f: unknown) => typeof f === 'string') : []
     if (reply === null) throw new Error('missing reply field')
-    return { reply, mood }
+    return { reply, mood, newFacts }
   } catch {
     // Spec §5: fall back to neutral mood + raw text if parsing fails.
-    return { reply: rawText, mood: 'neutral' }
+    return { reply: rawText, mood: 'neutral', newFacts: [] }
   }
 }
 
@@ -137,7 +139,16 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     const systemPrompt = `${SYSTEM_PROMPT}\n\n${buildMemoryBlock(memory)}`
 
     const rawText = await callGemini(message, history, systemPrompt)
-    const { reply, mood } = parseModelOutput(rawText)
+    const { reply, mood, newFacts } = parseModelOutput(rawText)
+
+    try {
+      await saveTurn(userId, memory.state, { userMessage: message, reply, mood, newFacts })
+    } catch (writeError) {
+      // Best-effort (spec §9 step 8 / api-docs endpoints.md): a write
+      // failure must not turn a successful reply into a 500 for the user.
+      console.error('memory write failed', writeError)
+    }
+
     res.status(200).json({ reply, mood })
   } catch {
     // Never leak stack traces or key names in the error body (spec's own
