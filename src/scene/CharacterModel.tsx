@@ -8,9 +8,9 @@ import { createHeartGeometry } from './heartShape'
 import { MOOD_POSES, type MoodPose } from './moodPoses'
 import type { Mood } from '../types'
 
-type SmoothedPose = Omit<MoodPose, 'heartEyes'>
+type SmoothedPose = Omit<MoodPose, 'heartHalo'>
 
-function withoutHeartEyes({ heartEyes: _heartEyes, ...rest }: MoodPose): SmoothedPose {
+function withoutHeartHalo({ heartHalo: _heartHalo, ...rest }: MoodPose): SmoothedPose {
   return rest
 }
 
@@ -25,13 +25,15 @@ const LOOK_LERP_SPEED = 2
 // Spec §6: mood transitions blend over ~200-300ms so they never snap. damp()
 // with this rate settles ~95% of the way there in about that window.
 const MOOD_TRANSITION_RATE = 11
-const HEART_SIZE = 0.06
-// Tuned by trial against the smurf's proportions specifically -- heart eyes
-// are only enabled for rigs with configured eye mesh nodes (see rightEyeName/
-// leftEyeName below), so this doesn't need to generalize to other rigs yet.
-const HEART_EYE_SPACING = 0.055
-const HEART_EYE_HEIGHT = 0.31
-const HEART_EYE_FORWARD = 0.27
+const HEART_SIZE = 0.08
+const HEART_COUNT = 3
+// Ring of hearts circling the head, roughly at hair-top height, rather than
+// pinned to the eyes -- much less sensitive to a given rig's exact eye
+// position/proportions, and it's a classic enough "lovestruck" cartoon beat
+// on its own.
+const HEART_HALO_RADIUS = 0.28
+const HEART_HALO_HEIGHT = 0.55
+const HEART_HALO_SPEED = 1.4 // radians/sec
 // Bone-to-bone span misses the head above the topmost bone and the sole
 // below the lowest, so pad the measured height a bit before scaling to it.
 const BONE_HEIGHT_MARGIN = 1.0
@@ -56,8 +58,7 @@ export function CharacterModel({ mood = 'neutral', characterId = DEFAULT_CHARACT
   const leftEye = useRef<THREE.Object3D | null>(null)
   const rightEye = useRef<THREE.Object3D | null>(null)
   const eyeBaseScale = useRef(new THREE.Vector3(1, 1, 1))
-  const leftHeart = useRef<THREE.Mesh>(null)
-  const rightHeart = useRef<THREE.Mesh>(null)
+  const hearts = useRef<(THREE.Mesh | null)[]>([])
 
   const lookCurrent = useRef({ yaw: 0, pitch: 0 })
   const lookTarget = useRef({ yaw: 0, pitch: 0 })
@@ -68,7 +69,7 @@ export function CharacterModel({ mood = 'neutral', characterId = DEFAULT_CHARACT
 
   // Smoothed toward the target mood's MoodPose every frame so switching moods
   // eases rather than snaps (spec §6).
-  const currentPose = useRef<SmoothedPose>(withoutHeartEyes(MOOD_POSES.neutral))
+  const currentPose = useRef<SmoothedPose>(withoutHeartHalo(MOOD_POSES.neutral))
 
   const heartGeometry = useMemo(() => createHeartGeometry(HEART_SIZE), [])
   const heartMaterial = useMemo(() => new THREE.MeshBasicMaterial({ color: '#ff4d6d' }), [])
@@ -137,7 +138,7 @@ export function CharacterModel({ mood = 'neutral', characterId = DEFAULT_CHARACT
 
   useFrame((state, delta) => {
     const t = state.clock.getElapsedTime()
-    const targetPose = withoutHeartEyes(MOOD_POSES[mood])
+    const targetPose = withoutHeartHalo(MOOD_POSES[mood])
     const pose = currentPose.current
     for (const key of Object.keys(pose) as (keyof SmoothedPose)[]) {
       pose[key] = THREE.MathUtils.damp(pose[key], targetPose[key], MOOD_TRANSITION_RATE, delta)
@@ -209,33 +210,32 @@ export function CharacterModel({ mood = 'neutral', characterId = DEFAULT_CHARACT
       rightEye.current.scale.setY(eyeScaleY)
     }
 
-    // Lovestruck heart eyes (spec §6) -- only for rigs with configured eye
-    // mesh nodes (see the rig config comment on rightEyeName/leftEyeName).
-    // Positioned off the HEAD BONE, not the eye meshes: the eye meshes are
-    // skinned, so their own Object3D position is near the skeleton's
-    // bind-pose root, not where bone-skinning visually deforms them to --
-    // getWorldPosition() on a SkinnedMesh doesn't account for GPU-side
-    // skinning at all.
-    const showHearts = MOOD_POSES[mood].heartEyes && Boolean(character.rig.rightEyeName && character.rig.leftEyeName)
-    if (leftHeart.current) leftHeart.current.visible = showHearts
-    if (rightHeart.current) rightHeart.current.visible = showHearts
+    // Lovestruck (spec §6 extras): a ring of hearts orbiting the head, rather
+    // than pinned to the eyes -- this model has no morph targets to swap in
+    // heart-shaped eyes, and pinning flat billboards precisely onto a
+    // skinned face turned out to be fiddly and rig-specific (see git log).
+    // Orbiting around the head bone is forgiving of exactly where the eyes
+    // are, works for any rig with a head bone, and doubles as a classic
+    // cartoon "lovestruck" beat on its own.
+    const showHearts = MOOD_POSES[mood].heartHalo && Boolean(headBone.current)
     if (showHearts && headBone.current) {
       headBone.current.updateWorldMatrix(true, false)
       const headWorldPos = new THREE.Vector3()
       headBone.current.getWorldPosition(headWorldPos)
-      if (leftHeart.current) {
-        leftHeart.current.position.set(
-          headWorldPos.x - HEART_EYE_SPACING,
-          headWorldPos.y + HEART_EYE_HEIGHT,
-          headWorldPos.z + HEART_EYE_FORWARD
+      for (let i = 0; i < HEART_COUNT; i++) {
+        const heart = hearts.current[i]
+        if (!heart) continue
+        heart.visible = true
+        const angle = (i / HEART_COUNT) * Math.PI * 2 + t * HEART_HALO_SPEED
+        heart.position.set(
+          headWorldPos.x + Math.cos(angle) * HEART_HALO_RADIUS,
+          headWorldPos.y + HEART_HALO_HEIGHT,
+          headWorldPos.z + Math.sin(angle) * HEART_HALO_RADIUS
         )
       }
-      if (rightHeart.current) {
-        rightHeart.current.position.set(
-          headWorldPos.x + HEART_EYE_SPACING,
-          headWorldPos.y + HEART_EYE_HEIGHT,
-          headWorldPos.z + HEART_EYE_FORWARD
-        )
+    } else {
+      for (const heart of hearts.current) {
+        if (heart) heart.visible = false
       }
     }
   })
@@ -245,8 +245,17 @@ export function CharacterModel({ mood = 'neutral', characterId = DEFAULT_CHARACT
       <group ref={group}>
         <primitive object={scene} />
       </group>
-      <mesh ref={leftHeart} geometry={heartGeometry} material={heartMaterial} visible={false} />
-      <mesh ref={rightHeart} geometry={heartGeometry} material={heartMaterial} visible={false} />
+      {Array.from({ length: HEART_COUNT }, (_, i) => (
+        <mesh
+          key={i}
+          ref={(el) => {
+            hearts.current[i] = el
+          }}
+          geometry={heartGeometry}
+          material={heartMaterial}
+          visible={false}
+        />
+      ))}
     </>
   )
 }

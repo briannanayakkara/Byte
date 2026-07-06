@@ -4,10 +4,9 @@ export interface CharacterRig {
   headBoneName: string | null
   /** Bone scaled for the breathing idle effect. */
   chestBoneName: string | null
-  // Blink + lovestruck heart-eyes currently only work for rigs with separate,
-  // scalable eye mesh nodes (like the smurf). Rigs that drive eyes via bones
-  // instead (like Daffy's real eye/eyelid bones) skip those effects for now
-  // rather than faking a mesh that isn't there -- see CharacterModel.
+  // Blink only works for rigs with separate, scalable eye mesh nodes (like
+  // the smurf). A rig that drives eyes via bones instead would need its own
+  // eyelid-bone-driven blink, not covered here -- see CharacterModel.
   rightEyeName: string | null
   leftEyeName: string | null
 }
@@ -40,28 +39,10 @@ export const CHARACTERS: CharacterConfig[] = [
       leftEyeName: 'Object_56',
     },
   },
-  {
-    id: 'daffy',
-    label: 'Daffy Duck',
-    modelPath: '/daffy_duck_-_fortnite_skin.glb',
-    targetHeight: 1.6,
-    rig: {
-      // Standard UE4/Fortnite mannequin skeleton -- completely different
-      // naming convention from the smurf's rig, hence the per-character config
-      // rather than hardcoded bone names in CharacterModel.
-      armPairs: [
-        ['upperarm_l_062', 'lowerarm_l_063'],
-        ['upperarm_r_0113', 'lowerarm_r_0114'],
-      ],
-      headBoneName: 'head_012',
-      chestBoneName: 'spine_05_09',
-      // Has real R_eye_042/L_eye_045 *bones* plus separate eyelid bones, but
-      // no standalone eye *mesh* to scale for a blink the way the smurf hack
-      // works -- eyelid-bone-driven blinking would be a separate feature.
-      rightEyeName: null,
-      leftEyeName: null,
-    },
-  },
+  // Daffy Duck (daffy_duck_-_fortnite_skin.glb) was tried as a second
+  // character and dropped -- not a good enough fit. The rig-config
+  // architecture above stays generic so a better second character can be
+  // dropped in later without touching CharacterModel again.
 ]
 
 export const DEFAULT_CHARACTER_ID = CHARACTERS[0].id

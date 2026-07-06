@@ -13,8 +13,8 @@ export interface MoodPose {
   breatheAmplitude: number
   /** >1 blinks less often (e.g. sleepy), <1 blinks more often (e.g. excited). */
   blinkIntervalMultiplier: number
-  /** Spec §6: lovestruck swaps in heart eyes since this model has no morph targets/eye textures to swap. */
-  heartEyes: boolean
+  /** Spec §6 "extras": lovestruck gets a ring of small hearts orbiting the head. */
+  heartHalo: boolean
 }
 
 const deg = (d: number) => (d * Math.PI) / 180
@@ -30,7 +30,7 @@ export const MOOD_POSES: Record<Mood, MoodPose> = {
     breatheSpeed: 1.6,
     breatheAmplitude: 0.03,
     blinkIntervalMultiplier: 1,
-    heartEyes: false,
+    heartHalo: false,
   },
   happy: {
     headPitch: deg(-4),
@@ -42,7 +42,7 @@ export const MOOD_POSES: Record<Mood, MoodPose> = {
     breatheSpeed: 1.8,
     breatheAmplitude: 0.035,
     blinkIntervalMultiplier: 1,
-    heartEyes: false,
+    heartHalo: false,
   },
   curious: {
     // The classic "head tilt" — asymmetric roll + yaw reads as curiosity even
@@ -56,7 +56,7 @@ export const MOOD_POSES: Record<Mood, MoodPose> = {
     breatheSpeed: 1.6,
     breatheAmplitude: 0.03,
     blinkIntervalMultiplier: 1.3,
-    heartEyes: false,
+    heartHalo: false,
   },
   sleepy: {
     headPitch: deg(16),
@@ -68,7 +68,7 @@ export const MOOD_POSES: Record<Mood, MoodPose> = {
     breatheSpeed: 0.8,
     breatheAmplitude: 0.045,
     blinkIntervalMultiplier: 1.8,
-    heartEyes: false,
+    heartHalo: false,
   },
   excited: {
     headPitch: deg(-8),
@@ -80,7 +80,7 @@ export const MOOD_POSES: Record<Mood, MoodPose> = {
     breatheSpeed: 2.6,
     breatheAmplitude: 0.03,
     blinkIntervalMultiplier: 0.7,
-    heartEyes: false,
+    heartHalo: false,
   },
   confused: {
     headPitch: deg(2),
@@ -92,7 +92,7 @@ export const MOOD_POSES: Record<Mood, MoodPose> = {
     breatheSpeed: 1.6,
     breatheAmplitude: 0.03,
     blinkIntervalMultiplier: 1,
-    heartEyes: false,
+    heartHalo: false,
   },
   lovestruck: {
     headPitch: deg(-6),
@@ -104,6 +104,6 @@ export const MOOD_POSES: Record<Mood, MoodPose> = {
     breatheSpeed: 2,
     breatheAmplitude: 0.03,
     blinkIntervalMultiplier: 1,
-    heartEyes: true,
+    heartHalo: true,
   },
 }
