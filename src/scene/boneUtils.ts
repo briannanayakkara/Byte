@@ -47,3 +47,29 @@ export function worldTiltLocalQuat(
   const newWorldQuat = delta.multiply(baseWorldQuat)
   return parentWorldQuat.clone().invert().multiply(newWorldQuat)
 }
+
+/**
+ * Bounding box built from bone WORLD positions rather than mesh geometry.
+ *
+ * THREE.Box3.setFromObject reads a SkinnedMesh's raw bind-pose vertex data
+ * transformed only by the mesh's own (near-identity) matrixWorld -- it does
+ * NOT account for GPU-side skinning at all. That's fine when a rig's bind
+ * pose happens to match its rendered pose (true for the simpler smurf rig),
+ * but game-ready rigs like a Fortnite skeleton can store bind-pose geometry
+ * in a different reference arrangement than what's actually displayed,
+ * which silently produces the wrong size. Bone world positions are always
+ * correct for the CURRENT pose, so they're a more reliable fallback.
+ */
+export function boneWorldBounds(root: THREE.Object3D): THREE.Box3 | null {
+  const box = new THREE.Box3()
+  const pos = new THREE.Vector3()
+  let found = false
+  root.traverse((obj) => {
+    if ((obj as THREE.Bone).isBone) {
+      obj.getWorldPosition(pos)
+      box.expandByPoint(pos)
+      found = true
+    }
+  })
+  return found ? box : null
+}

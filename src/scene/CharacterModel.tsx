@@ -2,7 +2,8 @@ import { useEffect, useMemo, useRef } from 'react'
 import { useFrame } from '@react-three/fiber'
 import { useGLTF } from '@react-three/drei'
 import * as THREE from 'three'
-import { aimBoneAt, worldTiltLocalQuat } from './boneUtils'
+import { aimBoneAt, boneWorldBounds, worldTiltLocalQuat } from './boneUtils'
+import { CHARACTERS, DEFAULT_CHARACTER_ID, type CharacterConfig } from './characters'
 import { createHeartGeometry } from './heartShape'
 import { MOOD_POSES, type MoodPose } from './moodPoses'
 import type { Mood } from '../types'
@@ -12,9 +13,6 @@ type SmoothedPose = Omit<MoodPose, 'heartEyes'>
 function withoutHeartEyes({ heartEyes: _heartEyes, ...rest }: MoodPose): SmoothedPose {
   return rest
 }
-
-const MODEL_PATH = '/wild_smurf_sonic_rumble.glb'
-const TARGET_HEIGHT = 1.6
 
 const BLINK_MIN_INTERVAL = 2.5
 const BLINK_MAX_INTERVAL = 6
@@ -28,17 +26,25 @@ const LOOK_LERP_SPEED = 2
 // with this rate settles ~95% of the way there in about that window.
 const MOOD_TRANSITION_RATE = 11
 const HEART_SIZE = 0.06
-// Tuned by trial (headBone's own position is near the neck, not the eyes).
+// Tuned by trial against the smurf's proportions specifically -- heart eyes
+// are only enabled for rigs with configured eye mesh nodes (see rightEyeName/
+// leftEyeName below), so this doesn't need to generalize to other rigs yet.
 const HEART_EYE_SPACING = 0.055
 const HEART_EYE_HEIGHT = 0.31
 const HEART_EYE_FORWARD = 0.27
+// Bone-to-bone span misses the head above the topmost bone and the sole
+// below the lowest, so pad the measured height a bit before scaling to it.
+const BONE_HEIGHT_MARGIN = 1.0
 
 interface CharacterModelProps {
   mood?: Mood
+  characterId?: string
 }
 
-export function CharacterModel({ mood = 'neutral' }: CharacterModelProps) {
-  const { scene } = useGLTF(MODEL_PATH)
+export function CharacterModel({ mood = 'neutral', characterId = DEFAULT_CHARACTER_ID }: CharacterModelProps) {
+  const character: CharacterConfig =
+    CHARACTERS.find((c) => c.id === characterId) ?? CHARACTERS[0]
+  const { scene } = useGLTF(character.modelPath)
   const group = useRef<THREE.Group>(null)
   const basePosition = useRef(new THREE.Vector3())
 
@@ -47,10 +53,6 @@ export function CharacterModel({ mood = 'neutral' }: CharacterModelProps) {
   const headParentWorldQuat = useRef(new THREE.Quaternion())
   const chestBone = useRef<THREE.Object3D | null>(null)
   const chestBaseScale = useRef(new THREE.Vector3(1, 1, 1))
-  // Identified by directly inspecting the glTF: Sketchfab's Blender export
-  // names mesh *container nodes* generically ("Object_55"/"Object_56") even
-  // though the underlying meshes are named Mesh_eye_..._R_Eye / L_Eye, so we
-  // can't find these by a "contains 'eye'" name search after load.
   const leftEye = useRef<THREE.Object3D | null>(null)
   const rightEye = useRef<THREE.Object3D | null>(null)
   const eyeBaseScale = useRef(new THREE.Vector3(1, 1, 1))
@@ -73,27 +75,41 @@ export function CharacterModel({ mood = 'neutral' }: CharacterModelProps) {
 
   useEffect(() => {
     if (!group.current) return
-    scene.updateMatrixWorld(true)
+
+    // Reset to identity before measuring: on a character switch, group.current
+    // still carries the PREVIOUS character's scale/position, and
+    // scene.updateMatrixWorld composes with the parent's already-computed
+    // matrixWorld rather than recomputing it -- so measuring bone world
+    // positions without this reset would measure the new model through the
+    // old model's leftover transform.
+    group.current.scale.setScalar(1)
+    group.current.position.set(0, 0, 0)
+    group.current.updateMatrixWorld(true)
+
+    const rig = character.rig
 
     // Normalize whatever native scale/units the source file uses to a
-    // consistent on-screen size, centered on the origin.
-    const box = new THREE.Box3().setFromObject(scene)
+    // consistent on-screen size, centered on the origin. Prefer bone world
+    // positions over mesh Box3 -- see boneWorldBounds for why (mesh bind-pose
+    // geometry can be authored in a different reference arrangement than
+    // what's actually rendered, which silently produces the wrong size).
+    const boneBox = boneWorldBounds(scene)
+    const box = boneBox ?? new THREE.Box3().setFromObject(scene)
     const size = box.getSize(new THREE.Vector3())
     const center = box.getCenter(new THREE.Vector3())
-    const scale = TARGET_HEIGHT / size.y
+    const scale = character.targetHeight / (size.y * BONE_HEIGHT_MARGIN)
     group.current.scale.setScalar(scale)
     basePosition.current.set(-center.x * scale, -center.y * scale, -center.z * scale)
     group.current.position.copy(basePosition.current)
 
-    // Bring the T-pose arms down to a resting pose. Aim each upper-arm bone
-    // at its elbow child, re-pointing that world-space direction mostly
+    // Bring T-pose arms down to a resting pose. Aim each upper-arm bone at
+    // its elbow child, re-pointing that world-space direction mostly
     // downward while preserving which side it leans to (so it reads as
-    // "hanging at the side," not snapped to dead-center).
-    const armPairs: [string, string][] = [
-      ['L_Arm_A_00', 'L_Arm_B_08'],
-      ['R_Arm_A_022', 'R_Arm_B_023'],
-    ]
-    for (const [shoulderName, elbowName] of armPairs) {
+    // "hanging at the side," not snapped to dead-center). Bone names come
+    // from the per-character rig config since every rig names them
+    // differently (compare the smurf's Sonic-Rumble-style names to Daffy's
+    // standard UE4/Fortnite mannequin names).
+    for (const [shoulderName, elbowName] of rig.armPairs) {
       const shoulder = scene.getObjectByName(shoulderName)
       const elbow = scene.getObjectByName(elbowName)
       if (!shoulder || !elbow) continue
@@ -105,19 +121,19 @@ export function CharacterModel({ mood = 'neutral' }: CharacterModelProps) {
       aimBoneAt(shoulder, elbow, new THREE.Vector3(sideSign * 0.2, -0.95, 0.1))
     }
 
-    headBone.current = scene.getObjectByName('C_Head_06') ?? null
+    headBone.current = rig.headBoneName ? (scene.getObjectByName(rig.headBoneName) ?? null) : null
     if (headBone.current) {
       headBone.current.getWorldQuaternion(headBaseWorldQuat.current)
       headBone.current.parent?.getWorldQuaternion(headParentWorldQuat.current)
     }
 
-    chestBone.current = scene.getObjectByName('C_Spine_C_05') ?? null
+    chestBone.current = rig.chestBoneName ? (scene.getObjectByName(rig.chestBoneName) ?? null) : null
     if (chestBone.current) chestBaseScale.current.copy(chestBone.current.scale)
 
-    rightEye.current = scene.getObjectByName('Object_55') ?? null
-    leftEye.current = scene.getObjectByName('Object_56') ?? null
+    rightEye.current = rig.rightEyeName ? (scene.getObjectByName(rig.rightEyeName) ?? null) : null
+    leftEye.current = rig.leftEyeName ? (scene.getObjectByName(rig.leftEyeName) ?? null) : null
     if (rightEye.current) eyeBaseScale.current.copy(rightEye.current.scale)
-  }, [scene])
+  }, [scene, character])
 
   useFrame((state, delta) => {
     const t = state.clock.getElapsedTime()
@@ -193,14 +209,14 @@ export function CharacterModel({ mood = 'neutral' }: CharacterModelProps) {
       rightEye.current.scale.setY(eyeScaleY)
     }
 
-    // Lovestruck heart eyes (spec §6) -- this model has no morph targets or
-    // swappable eye textures, so hearts are separate billboards positioned
-    // over the real eyes rather than a texture/mesh swap. Positioned off the
-    // HEAD BONE, not the eye meshes: the eye meshes are skinned, so their own
-    // Object3D position is near the skeleton's bind-pose root, not where
-    // bone-skinning visually deforms them to -- getWorldPosition() on a
-    // SkinnedMesh doesn't account for GPU-side skinning at all.
-    const showHearts = MOOD_POSES[mood].heartEyes
+    // Lovestruck heart eyes (spec §6) -- only for rigs with configured eye
+    // mesh nodes (see the rig config comment on rightEyeName/leftEyeName).
+    // Positioned off the HEAD BONE, not the eye meshes: the eye meshes are
+    // skinned, so their own Object3D position is near the skeleton's
+    // bind-pose root, not where bone-skinning visually deforms them to --
+    // getWorldPosition() on a SkinnedMesh doesn't account for GPU-side
+    // skinning at all.
+    const showHearts = MOOD_POSES[mood].heartEyes && Boolean(character.rig.rightEyeName && character.rig.leftEyeName)
     if (leftHeart.current) leftHeart.current.visible = showHearts
     if (rightHeart.current) rightHeart.current.visible = showHearts
     if (showHearts && headBone.current) {
@@ -208,10 +224,18 @@ export function CharacterModel({ mood = 'neutral' }: CharacterModelProps) {
       const headWorldPos = new THREE.Vector3()
       headBone.current.getWorldPosition(headWorldPos)
       if (leftHeart.current) {
-        leftHeart.current.position.set(headWorldPos.x - HEART_EYE_SPACING, headWorldPos.y + HEART_EYE_HEIGHT, headWorldPos.z + HEART_EYE_FORWARD)
+        leftHeart.current.position.set(
+          headWorldPos.x - HEART_EYE_SPACING,
+          headWorldPos.y + HEART_EYE_HEIGHT,
+          headWorldPos.z + HEART_EYE_FORWARD
+        )
       }
       if (rightHeart.current) {
-        rightHeart.current.position.set(headWorldPos.x + HEART_EYE_SPACING, headWorldPos.y + HEART_EYE_HEIGHT, headWorldPos.z + HEART_EYE_FORWARD)
+        rightHeart.current.position.set(
+          headWorldPos.x + HEART_EYE_SPACING,
+          headWorldPos.y + HEART_EYE_HEIGHT,
+          headWorldPos.z + HEART_EYE_FORWARD
+        )
       }
     }
   })
@@ -227,4 +251,4 @@ export function CharacterModel({ mood = 'neutral' }: CharacterModelProps) {
   )
 }
 
-useGLTF.preload(MODEL_PATH)
+for (const c of CHARACTERS) useGLTF.preload(c.modelPath)
