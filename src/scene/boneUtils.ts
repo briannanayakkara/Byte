@@ -25,3 +25,25 @@ export function aimBoneAt(bone: THREE.Object3D, child: THREE.Object3D, targetWor
 
   bone.quaternion.copy(parentWorldQuat.invert().multiply(newWorldQuat))
 }
+
+/**
+ * Computes the local quaternion `bone` needs so that, on top of its
+ * `baseWorldQuat` (its world orientation at some reference pose), it's
+ * additionally rotated by `worldEuler` expressed in WORLD axes (X=pitch,
+ * Y=yaw, Z=roll as the camera sees them) -- not the bone's own local axes.
+ *
+ * Rig-exported bones often have arbitrary/skewed local axis conventions
+ * (baked in from the modeling tool's bind pose), so applying an intuitive
+ * "pitch/yaw/roll" Euler directly as a *local* rotation can get redirected
+ * into a wildly different-looking world-space rotation. Composing in world
+ * space first sidesteps that, the same way aimBoneAt does for the arms.
+ */
+export function worldTiltLocalQuat(
+  baseWorldQuat: THREE.Quaternion,
+  parentWorldQuat: THREE.Quaternion,
+  worldEuler: THREE.Euler
+): THREE.Quaternion {
+  const delta = new THREE.Quaternion().setFromEuler(worldEuler)
+  const newWorldQuat = delta.multiply(baseWorldQuat)
+  return parentWorldQuat.clone().invert().multiply(newWorldQuat)
+}
