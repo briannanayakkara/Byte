@@ -2,21 +2,36 @@ import { Suspense, useState } from 'react'
 import { Canvas } from '@react-three/fiber'
 import { ChatInput } from './components/ChatInput'
 import { SpeechBubble } from './components/SpeechBubble'
+import { sendChatMessage } from './lib/chatApi'
 import { CharacterModel } from './scene/CharacterModel'
 import { CHARACTERS, DEFAULT_CHARACTER_ID } from './scene/characters'
 import type { ChatMessage, Mood } from './types'
 
 const MOODS: Mood[] = ['neutral', 'happy', 'curious', 'sleepy', 'excited', 'confused', 'lovestruck']
+// Spec §8 error handling: in-character fallback line + confused mood if
+// /api/chat fails.
+const ERROR_REPLY = "aw beans, my brain short-circuited — you're just too cute. say that again?"
 
 function App() {
   const [mood, setMood] = useState<Mood>('neutral')
   const [characterId, setCharacterId] = useState(DEFAULT_CHARACTER_ID)
   const [messages, setMessages] = useState<ChatMessage[]>([])
+  const [isSending, setIsSending] = useState(false)
 
-  function handleSend(text: string) {
-    // Step 4: no AI yet -- just echo the message into the bubble. Step 5
-    // wires this up to /api/chat for a real reply instead.
+  async function handleSend(text: string) {
+    const history = messages
     setMessages((prev) => [...prev, { role: 'user', content: text }])
+    setIsSending(true)
+    try {
+      const { reply, mood: replyMood } = await sendChatMessage(text, history)
+      setMessages((prev) => [...prev, { role: 'assistant', content: reply }])
+      setMood(replyMood)
+    } catch {
+      setMessages((prev) => [...prev, { role: 'assistant', content: ERROR_REPLY }])
+      setMood('confused')
+    } finally {
+      setIsSending(false)
+    }
   }
 
   const latestMessage = messages.at(-1)
@@ -34,7 +49,7 @@ function App() {
       {latestMessage && <SpeechBubble text={latestMessage.content} />}
 
       <div className="absolute inset-x-0 bottom-4 flex flex-col items-center gap-3 px-4">
-        <ChatInput onSend={handleSend} />
+        <ChatInput onSend={handleSend} disabled={isSending} />
 
         {/* Temporary dev harness for verifying moods/characters (spec §9
             step 3) — the real mood driver is /api/chat's returned mood,
