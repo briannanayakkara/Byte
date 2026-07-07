@@ -2,7 +2,7 @@
 // 3). Called best-effort from chat.ts -- a failure here must never turn a
 // successful LLM reply into a 500 for the browser.
 import { supabase } from './supabase.js'
-import { computeStreak, relationshipLevel } from './relationship.js'
+import { computeEnergy, computeStreak, relationshipLevel } from './relationship.js'
 import type { CharacterState, Mood } from './types.js'
 
 interface SaveTurnInput {
@@ -31,7 +31,7 @@ export async function saveTurn(
       {
         user_id: userId,
         mood,
-        energy: priorState.energy,
+        energy: computeEnergy(priorState.last_seen_at, priorState.energy),
         interaction_count: interactionCount,
         last_seen_at: now,
         relationship_level: relationshipLevel(interactionCount),
