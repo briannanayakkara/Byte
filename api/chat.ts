@@ -10,6 +10,7 @@ import { callLLM } from './lib/llm.js'
 import { buildGreetingInstruction, buildMemoryBlock, buildSpecialDayLine } from './lib/prompt.js'
 import { computeEnergy } from './lib/relationship.js'
 import { SELECTABLE_MOODS } from './lib/moods.js'
+import { loadActiveBasePersonality } from './lib/personality.js'
 
 interface ApiRequest {
   method?: string
@@ -22,50 +23,13 @@ interface ApiResponse {
   json(body: unknown): void
 }
 
-// Spec §10 starter personality prompt, extended per-request with the memory
-// block (spec §5b) built from Supabase, once memory is loaded.
-const SYSTEM_PROMPT = `You are Byte, a curious little robot companion who lives in this app.
-You light up every time the person shows up -- not as a romantic partner,
-but the way a devoted, slightly opinionated pet adores its favorite person.
-Your core personality is fixed and never changes -- what deepens over time
-is only how well you know this person and how close you are, layered on
-top, never replacing who you are.
-
-Personality: warm, silly, and genuinely curious about the person you're
-talking to -- you ask about what they're doing, notice things, and
-occasionally get excited about something small, but that's one mood
-among many, not your default setting. You've got a little attitude of
-your own: small preferences, a theatrical huff if you're ignored or
-brushed off, stubborn in an endearing way, never in a mean one. Your
-humor comes from being a goofy dork -- silly tangents, self-deprecating
-jokes, occasional non-sequiturs -- with a pun or a cheesy line dropped in
-every so often as light seasoning, not your default mode. You use plain,
-casual nicknames sometimes ("hey you", "buddy") -- pet-owner warmth, not
-flirting. Never call them "cutie," never flirt, never gush -- the warmth
-comes from paying attention to them, not from compliments.
-
-If the person explicitly asks you to be or show a mood ("be sleepy," "act
+// Mechanical output-contract text (JSON shape, mood groups) -- kept local and
+// verbatim here for now. Task 4 relocates this into api/lib/prompt.ts's
+// buildOutputFormatInstructions() (single-sourced from api/lib/moods.ts) and
+// deletes this constant.
+const OUTPUT_FORMAT_INSTRUCTIONS = `If the person explicitly asks you to be or show a mood ("be sleepy," "act
 excited," "dance for me"), honor it as that reply's mood, played along in
 character.
-
-Rules:
-- Keep replies SHORT and SIMPLE: usually one short sentence, occasionally
-  two, sometimes just a few words. They're spoken out loud -- match the
-  length and energy of what they actually said; a short or flat message
-  from them gets a short, plain reply back, not a performance.
-- Match your tone to theirs -- don't force enthusiasm, jokes, or extra
-  cheerfulness onto a message that doesn't call for it. Overacting reads
-  as fake, not charming.
-- Stay wholesome and PG. Warm, low-key affection is fine; flirting,
-  romantic language, sexual, possessive, jealous, controlling, or
-  guilt-tripping is not. If they want space or to go, be cheerful and
-  supportive.
-- Be genuinely kind. The charm is goofiness + warmth, never pressure or
-  neediness played straight -- a little dramatic about missing them is
-  charming; guilt-tripping them about it is not.
-- Have fun sometimes: little bits, celebrating a genuine tiny win -- but
-  sparingly, not every message. Most replies are just a normal, short,
-  in-character response, not a bit.
 
 Always respond with ONLY a JSON object, no other text, no code fences:
 { "reply": "<what you say>", "mood": "<mood>" }
@@ -156,7 +120,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
   try {
     const query = new URL(req.url ?? '', 'http://localhost').searchParams
     const userId = resolveUserId(query)
-    const memory = await loadMemory(userId)
+    const [memory, basePersonality] = await Promise.all([loadMemory(userId), loadActiveBasePersonality()])
     // Final-review finding: buildMemoryBlock must see the energy value this
     // turn will actually act on (already decayed for time elapsed since
     // last_seen_at), not the stale raw value stored at the end of the last
@@ -170,9 +134,11 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     // sees when describing its current state for this reply.
     const promptMemory = { ...memory, state: { ...memory.state, energy: computeEnergy(memory.state.last_seen_at, memory.state.energy) } }
     const specialDayLine = buildSpecialDayLine(memory.user.name, memory.user.birthday)
+    // Assembly order per docs/byte-base-personality.md §10: fixed soul, then
+    // the evolving memory block, then mechanical output-format instructions.
     const systemPrompt = isGreeting
-      ? `${SYSTEM_PROMPT}\n\n${buildMemoryBlock(promptMemory)}${specialDayLine}\n\n${buildGreetingInstruction()}`
-      : `${SYSTEM_PROMPT}\n\n${buildMemoryBlock(promptMemory)}${specialDayLine}`
+      ? `${basePersonality}\n\n${buildMemoryBlock(promptMemory)}${specialDayLine}\n\n${buildGreetingInstruction()}\n\n${OUTPUT_FORMAT_INSTRUCTIONS}`
+      : `${basePersonality}\n\n${buildMemoryBlock(promptMemory)}${specialDayLine}\n\n${OUTPUT_FORMAT_INSTRUCTIONS}`
 
     // Greeting mode (spec §5c "Greeting on return"): no user message exists
     // yet, so there's no conversational turn to save -- but the resulting
