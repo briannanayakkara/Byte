@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Character } from './components/Character'
 import { ChatInput } from './components/ChatInput'
 import { SpeechBubble } from './components/SpeechBubble'
+import { ThoughtBubble } from './components/ThoughtBubble'
 import { fetchGreeting, sendChatMessage } from './lib/chatApi'
 import type { ChatMessage, Mood } from './types'
 
@@ -10,6 +11,26 @@ const MOODS: Mood[] = ['neutral', 'happy', 'curious', 'sleepy', 'excited', 'conf
 // /api/chat fails.
 const ERROR_REPLY = "aw beans, my brain short-circuited — you're just too cute. say that again?"
 
+// Occasional idle "what's Byte thinking about" beats -- purely decorative
+// (client-side random, no LLM call) rather than a real generated thought,
+// since spec §13 explicitly defers real proactive/autonomous behaviors to
+// post-v1. Goofy monkey-brain stuff, with an occasional soft nod to the
+// person it's thinking about.
+const THOUGHTS = [
+  ['🍌', '🤔'],
+  ['🎮', '✨'],
+  ['☕', '💭'],
+  ['🐒', '💭'],
+  ['🍕', '😋'],
+  ['🌙', '💤'],
+  ['💭', '🥰'],
+  ['🤔', '💌'],
+  ['🍌', '❤️'],
+]
+const THOUGHT_MIN_DELAY_MS = 20_000
+const THOUGHT_MAX_DELAY_MS = 40_000
+const THOUGHT_VISIBLE_MS = 3_200
+
 function App() {
   const [mood, setMood] = useState<Mood>('neutral')
   const [messages, setMessages] = useState<ChatMessage[]>([])
@@ -17,6 +38,9 @@ function App() {
   // Spec §5c "Greeting on return" -- kept separate from `messages` so it
   // never gets sent back to Gemini as fake conversation history.
   const [greeting, setGreeting] = useState<string | null>(null)
+  const [thought, setThought] = useState<string[] | null>(null)
+  const isSendingRef = useRef(isSending)
+  const hasBubbleRef = useRef(false)
 
   useEffect(() => {
     fetchGreeting()
@@ -29,7 +53,30 @@ function App() {
       })
   }, [])
 
+  useEffect(() => {
+    isSendingRef.current = isSending
+  }, [isSending])
+
+  useEffect(() => {
+    let timeoutId: ReturnType<typeof setTimeout>
+    function scheduleNext() {
+      const delay = THOUGHT_MIN_DELAY_MS + Math.random() * (THOUGHT_MAX_DELAY_MS - THOUGHT_MIN_DELAY_MS)
+      timeoutId = setTimeout(() => {
+        // Only daydream between conversations -- not mid-send, not over an
+        // active reply/greeting bubble.
+        if (!isSendingRef.current && !hasBubbleRef.current) {
+          setThought(THOUGHTS[Math.floor(Math.random() * THOUGHTS.length)])
+          setTimeout(() => setThought(null), THOUGHT_VISIBLE_MS)
+        }
+        scheduleNext()
+      }, delay)
+    }
+    scheduleNext()
+    return () => clearTimeout(timeoutId)
+  }, [])
+
   async function handleSend(text: string) {
+    setThought(null)
     const history = messages
     setMessages((prev) => [...prev, { role: 'user', content: text }])
     setIsSending(true)
@@ -46,12 +93,13 @@ function App() {
   }
 
   const bubbleText = messages.at(-1)?.content ?? greeting
+  hasBubbleRef.current = bubbleText != null
 
   return (
     <div className="relative h-svh w-svw bg-gradient-to-b from-slate-900 to-slate-800 text-white">
       <Character mood={mood} />
 
-      {bubbleText && <SpeechBubble text={bubbleText} />}
+      {thought ? <ThoughtBubble emojis={thought} /> : bubbleText && <SpeechBubble text={bubbleText} />}
 
       <div className="absolute inset-x-0 bottom-4 flex flex-col items-center gap-3 px-4">
         <ChatInput onSend={handleSend} disabled={isSending} />

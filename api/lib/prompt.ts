@@ -78,8 +78,9 @@ export function buildGreetingInstruction(): string {
   return `The person just opened the app -- they haven't said anything yet.
 Write a short, warm, in-character GREETING (not a reply to a message) that
 reacts naturally to how long it's been since you last talked and, if the
-streak is 2+ days, celebrates it briefly. One line, no question you're
-answering.
+streak is 2+ days, celebrates it briefly. Always say their name (given
+above) somewhere in the greeting -- never a generic "hey you" with no
+name attached. One line, no question you're answering.
 
 Respond with ONLY the same JSON shape as always, "new_facts" empty since
 nothing new was learned:
