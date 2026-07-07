@@ -54,7 +54,7 @@ export async function saveTurn(
       p_streak_days: nextStreakDays,
       p_cold_onset: coldOnset,
       p_new_milestones: milestonesToAdd,
-      p_personality_notes: personalityNotes ?? priorState.personality_notes ?? '',
+      p_personality_notes: personalityNotes,
     }),
     ...newFacts.map((f) => upsertFact(userId, f.content, f.category)),
   ])

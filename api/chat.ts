@@ -3,15 +3,14 @@
 // Minimal request/response typing instead of a @vercel/node dependency:
 // structurally compatible with VercelRequest/VercelResponse in production,
 // and with the local Vite dev middleware in vite.config.ts.
-import type { ChatMessage, FactCategory, Mood } from './lib/types.js'
-import { FACT_CATEGORIES } from './lib/types.js'
+import type { ChatMessage } from './lib/types.js'
 import { loadMemory, resolveUserId, toChatHistory } from './lib/memory.js'
 import { saveGreeting, saveTurn } from './lib/memory-write.js'
 import { callLLM } from './lib/llm.js'
 import { buildGreetingInstruction, buildMemoryBlock, buildMilestoneReminder, buildOutputFormatInstructions, buildSpecialDayLine } from './lib/prompt.js'
 import { canCatchCold, computeEnergy, computeStreak, newMilestones, relationshipLevel } from './lib/relationship.js'
-import { SELECTABLE_MOODS } from './lib/moods.js'
 import { loadActiveBasePersonality } from './lib/personality.js'
+import { parseModelOutput } from './lib/parseModelOutput.js'
 
 interface ApiRequest {
   method?: string
@@ -33,42 +32,6 @@ function ensureNameMentioned(reply: string, name: string): string {
   if (reply.toLowerCase().includes(name.toLowerCase())) return reply
   if (GENERIC_OPENERS.test(reply)) return reply.replace(GENERIC_OPENERS, `Hey ${name}! `)
   return `Hey ${name}! ${reply}`
-}
-
-function stripCodeFences(text: string): string {
-  const fenced = text.match(/```(?:json)?\s*([\s\S]*?)\s*```/i)
-  return fenced ? fenced[1] : text
-}
-
-interface NewFact {
-  content: string
-  category: FactCategory
-}
-
-function parseModelOutput(
-  rawText: string,
-  fallbackPersonalityNotes: string | null
-): { reply: string; mood: Mood; newFacts: NewFact[]; personalityNotes: string | null } {
-  try {
-    const parsed = JSON.parse(stripCodeFences(rawText).trim())
-    const reply = typeof parsed.reply === 'string' ? parsed.reply : null
-    const mood = SELECTABLE_MOODS.includes(parsed.mood) ? (parsed.mood as Mood) : 'neutral'
-    const newFacts: NewFact[] = Array.isArray(parsed.new_facts)
-      ? parsed.new_facts
-          .filter((f: unknown): f is { content: unknown; category: unknown } => !!f && typeof f === 'object')
-          .map((f: { content: unknown; category: unknown }) => ({
-            content: f.content,
-            category: FACT_CATEGORIES.includes(f.category as FactCategory) ? f.category : 'other',
-          }))
-          .filter((f: { content: unknown; category: FactCategory }): f is NewFact => typeof f.content === 'string')
-      : []
-    const personalityNotes = typeof parsed.personality_notes === 'string' ? parsed.personality_notes : fallbackPersonalityNotes
-    if (reply === null) throw new Error('missing reply field')
-    return { reply, mood, newFacts, personalityNotes }
-  } catch {
-    // Spec §5: fall back to neutral mood + raw text if parsing fails.
-    return { reply: rawText, mood: 'neutral', newFacts: [], personalityNotes: fallbackPersonalityNotes }
-  }
 }
 
 export default async function handler(req: ApiRequest, res: ApiResponse) {
