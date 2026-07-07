@@ -9,57 +9,7 @@ import { saveGreeting, saveTurn } from './lib/memory-write.js'
 import { callLLM } from './lib/llm.js'
 import { buildGreetingInstruction, buildMemoryBlock, buildSpecialDayLine } from './lib/prompt.js'
 import { computeEnergy } from './lib/relationship.js'
-
-// The 32 moods the LLM is allowed to pick (design doc §6a) -- `listening`
-// and `talking` are excluded because there's no voice/TTS feature yet to
-// give them a real signal; they still exist in the Mood type and in
-// Character.tsx's expression set, just unreachable from /api/chat today.
-const VALID_MOODS: Mood[] = [
-  'happy',
-  'excited',
-  'content',
-  'neutral',
-  'curious',
-  'confused',
-  'sad',
-  'surprised',
-  'laughing',
-  'lovestruck',
-  'wink',
-  'smug',
-  'annoyed',
-  'grumpy',
-  'challenging',
-  'pout',
-  'bored',
-  'proud',
-  'dizzy',
-  'thinking',
-  'scared',
-  'sick',
-  'unwell',
-  'recovering',
-  'dancing',
-  'sleepy',
-  'dozing',
-  'birthday',
-  'christmas',
-  'halloween',
-  'newyear',
-  'valentine',
-  'walk',
-  'run',
-  'jump',
-  'flip',
-  'backflip',
-  'spin',
-  'moonwalk',
-  'wiggle',
-  'stretch',
-  'wave',
-  'lookaround',
-  'sit',
-]
+import { SELECTABLE_MOODS } from './lib/moods.js'
 
 interface ApiRequest {
   method?: string
@@ -169,7 +119,7 @@ function parseModelOutput(rawText: string): { reply: string; mood: Mood; newFact
   try {
     const parsed = JSON.parse(stripCodeFences(rawText).trim())
     const reply = typeof parsed.reply === 'string' ? parsed.reply : null
-    const mood = VALID_MOODS.includes(parsed.mood) ? (parsed.mood as Mood) : 'neutral'
+    const mood = SELECTABLE_MOODS.includes(parsed.mood) ? (parsed.mood as Mood) : 'neutral'
     const newFacts = Array.isArray(parsed.new_facts) ? parsed.new_facts.filter((f: unknown) => typeof f === 'string') : []
     if (reply === null) throw new Error('missing reply field')
     return { reply, mood, newFacts }

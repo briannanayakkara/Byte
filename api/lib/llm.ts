@@ -6,6 +6,7 @@
 // (and /api/chat as a whole) only runs via the local Vite dev server for
 // now, not a Vercel/Cloudflare deploy.
 import type { ChatMessage } from './types.js'
+import { SELECTABLE_MOODS } from './moods.js'
 
 interface OllamaResponse {
   message?: { content?: string }
@@ -15,15 +16,15 @@ interface OllamaResponse {
 // llama3.1:8b, under the full personality+memory system prompt, regularly
 // omitted or emptied "new_facts" with that alone (verified against a
 // running local Ollama). A JSON Schema constrains the model's decoding to
-// always include all three fields, which fixed it in the same test.
+// always include all fields, which fixed it in the same test. The mood enum
+// comes from SELECTABLE_MOODS (api/lib/moods.ts) -- previously hardcoded to
+// 7 values here while the prompt offered ~43, silently making most moods
+// impossible outputs.
 const RESPONSE_SCHEMA = {
   type: 'object',
   properties: {
     reply: { type: 'string' },
-    mood: {
-      type: 'string',
-      enum: ['happy', 'curious', 'sleepy', 'excited', 'confused', 'neutral', 'lovestruck'],
-    },
+    mood: { type: 'string', enum: SELECTABLE_MOODS },
     new_facts: { type: 'array', items: { type: 'string' } },
   },
   required: ['reply', 'mood', 'new_facts'],
