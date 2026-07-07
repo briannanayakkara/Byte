@@ -9,7 +9,44 @@ import { saveTurn } from './lib/memory-write.js'
 import { callLLM } from './lib/llm.js'
 import { buildGreetingInstruction, buildMemoryBlock } from './lib/prompt.js'
 
-const VALID_MOODS: Mood[] = ['happy', 'curious', 'sleepy', 'excited', 'confused', 'neutral', 'lovestruck']
+// The 32 moods the LLM is allowed to pick (design doc §6a) -- `listening`
+// and `talking` are excluded because there's no voice/TTS feature yet to
+// give them a real signal; they still exist in the Mood type and in
+// Character.tsx's expression set, just unreachable from /api/chat today.
+const VALID_MOODS: Mood[] = [
+  'happy',
+  'excited',
+  'content',
+  'neutral',
+  'curious',
+  'confused',
+  'sad',
+  'surprised',
+  'laughing',
+  'lovestruck',
+  'wink',
+  'smug',
+  'annoyed',
+  'grumpy',
+  'challenging',
+  'pout',
+  'bored',
+  'proud',
+  'dizzy',
+  'thinking',
+  'scared',
+  'sick',
+  'unwell',
+  'recovering',
+  'dancing',
+  'sleepy',
+  'dozing',
+  'birthday',
+  'christmas',
+  'halloween',
+  'newyear',
+  'valentine',
+]
 
 interface ApiRequest {
   method?: string

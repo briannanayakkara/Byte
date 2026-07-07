@@ -6,7 +6,44 @@ import { ThoughtBubble } from './components/ThoughtBubble'
 import { fetchGreeting, sendChatMessage } from './lib/chatApi'
 import type { ChatMessage, Mood } from './types'
 
-const MOODS: Mood[] = ['neutral', 'happy', 'curious', 'sleepy', 'excited', 'confused', 'lovestruck']
+// Temporary: extended to all 34 for manual verification while porting the
+// new mood system (Task 3) -- this whole harness is deleted in Task 10.
+const MOODS: Mood[] = [
+  'happy',
+  'excited',
+  'content',
+  'neutral',
+  'curious',
+  'confused',
+  'sad',
+  'surprised',
+  'laughing',
+  'lovestruck',
+  'wink',
+  'smug',
+  'annoyed',
+  'grumpy',
+  'challenging',
+  'pout',
+  'bored',
+  'proud',
+  'dizzy',
+  'thinking',
+  'scared',
+  'sick',
+  'unwell',
+  'recovering',
+  'listening',
+  'talking',
+  'dancing',
+  'sleepy',
+  'dozing',
+  'birthday',
+  'christmas',
+  'halloween',
+  'newyear',
+  'valentine',
+]
 // Spec §8 error handling: in-character fallback line + confused mood if
 // /api/chat fails.
 const ERROR_REPLY = "aw beans, my brain short-circuited — you're just too cute. say that again?"
