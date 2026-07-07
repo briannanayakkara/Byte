@@ -1,0 +1,160 @@
+<div style="padding:1rem 0;">
+<h2 class="sr-only">Interactive preview of a dark robot with a redesigned, clearly puzzled confused expression using mismatched eyes and a head tilt, plus other mood expressions; on a transparent background.</h2>
+
+<div style="display:flex;justify-content:center;margin-bottom:1.25rem;">
+  <svg id="bot" width="320" height="320" viewBox="0 0 320 320" role="img" style="max-width:76vw;">
+    <title>Byte robot</title>
+    <desc>A dark navy robot with a clearly puzzled confused expression using mismatched eyes and a head tilt, plus other distinct mood expressions, on a transparent background.</desc>
+
+    <g id="emojiPop" style="opacity:0"><text id="emojiPopText" font-size="26" text-anchor="middle">✨</text></g>
+
+    <g id="bobG">
+      <ellipse cx="160" cy="290" rx="70" ry="8" fill="#000000" opacity="0.12"/>
+
+      <g id="footL">
+        <path d="M144 214 L134 258" stroke="#2C3350" stroke-width="26" stroke-linecap="round" fill="none"/>
+        <ellipse cx="128" cy="266" rx="30" ry="23" fill="#2C3350"/>
+        <ellipse cx="128" cy="266" rx="30" ry="23" fill="none" stroke="#3A4470" stroke-width="3"/>
+        <ellipse cx="120" cy="260" rx="8" ry="5" fill="#3FE0D0" opacity="0.35"/>
+      </g>
+      <g id="footR">
+        <path d="M176 214 L186 258" stroke="#2C3350" stroke-width="26" stroke-linecap="round" fill="none"/>
+        <ellipse cx="192" cy="266" rx="30" ry="23" fill="#2C3350"/>
+        <ellipse cx="192" cy="266" rx="30" ry="23" fill="none" stroke="#3A4470" stroke-width="3"/>
+        <ellipse cx="184" cy="260" rx="8" ry="5" fill="#3FE0D0" opacity="0.35"/>
+      </g>
+
+      <rect id="body" x="118" y="150" width="84" height="72" rx="24" fill="#23273A"/>
+      <rect id="belly" x="140" y="168" width="40" height="28" rx="8" fill="#171A28"/>
+      <circle id="lightL" cx="152" cy="182" r="4" fill="#3FE0D0"/>
+      <circle id="lightR" cx="168" cy="182" r="4" fill="#3FE0D0"/>
+
+      <g id="headG">
+        <rect x="86" y="66" width="148" height="112" rx="34" fill="#1B1E2C"/>
+        <rect x="86" y="66" width="148" height="112" rx="34" fill="none" stroke="#3A4470" stroke-width="5"/>
+        <circle cx="80" cy="120" r="18" fill="#2C3350"/><circle cx="80" cy="120" r="18" fill="none" stroke="#3A4470" stroke-width="3"/>
+        <circle cx="240" cy="120" r="18" fill="#2C3350"/><circle cx="240" cy="120" r="18" fill="none" stroke="#3A4470" stroke-width="3"/>
+        <rect x="104" y="90" width="112" height="64" rx="16" fill="#0A0C14"/>
+
+        <g id="eyesNormal">
+          <rect id="eyeL" x="122" y="112" width="26" height="20" rx="9" fill="#3FE0D0"/>
+          <rect id="eyeR" x="172" y="112" width="26" height="20" rx="9" fill="#3FE0D0"/>
+        </g>
+        <g id="eyesStar" style="opacity:0" fill="#F2C94C"><path id="starL" d=""/><path id="starR" d=""/></g>
+        <g id="eyesHeart" style="opacity:0" fill="#F2749A">
+          <path d="M135 130 L121 116 A8 8 0 0 1 135 106 A8 8 0 0 1 149 116 Z"/>
+          <path d="M185 130 L171 116 A8 8 0 0 1 185 106 A8 8 0 0 1 199 116 Z"/>
+        </g>
+        <g id="eyesConfused" style="opacity:0">
+          <circle cx="135" cy="116" r="14" fill="#3FE0D0"/>
+          <circle cx="132" cy="112" r="4" fill="#0A0C14"/>
+          <path d="M172 122 Q185 130 198 122" stroke="#3FE0D0" stroke-width="7" stroke-linecap="round" fill="none"/>
+        </g>
+        <path id="lidL" d="M118 122 Q135 108 152 122" fill="none" stroke="#3FE0D0" stroke-width="6" stroke-linecap="round" style="opacity:0"/>
+        <path id="lidR" d="M168 122 Q185 108 202 122" fill="none" stroke="#3FE0D0" stroke-width="6" stroke-linecap="round" style="opacity:0"/>
+
+        <g id="eqBars" style="opacity:0">
+          <rect x="150" y="140" width="5" height="10" rx="2" fill="#3FE0D0"/>
+          <rect x="158" y="136" width="5" height="18" rx="2" fill="#3FE0D0"/>
+          <rect x="166" y="132" width="5" height="26" rx="2" fill="#3FE0D0"/>
+        </g>
+        <g id="sleepZ" style="opacity:0" fill="#3FE0D0"><text x="222" y="88" font-size="17" font-family="sans-serif" font-weight="bold">z</text><text x="236" y="70" font-size="12" font-family="sans-serif" font-weight="bold">z</text></g>
+        <g id="questionMark" style="opacity:0" fill="#3FE0D0"><text x="196" y="80" font-size="24" font-family="sans-serif" font-weight="bold">?</text></g>
+      </g>
+    </g>
+  </svg>
+</div>
+
+<div style="display:flex;flex-wrap:wrap;gap:8px;justify-content:center;max-width:500px;margin:0 auto;">
+  <button data-m="happy">Happy</button>
+  <button data-m="excited">Excited</button>
+  <button data-m="curious">Curious</button>
+  <button data-m="sleepy">Sleepy</button>
+  <button data-m="confused">Confused</button>
+  <button data-m="lovestruck">Lovestruck</button>
+  <button data-m="neutral">Neutral</button>
+  <button data-m="talk">Talk</button>
+</div>
+
+<script>
+(function(){
+  const bob=document.getElementById('bobG'), headG=document.getElementById('headG');
+  const eyeL=document.getElementById('eyeL'), eyeR=document.getElementById('eyeR');
+  const eyesNormal=document.getElementById('eyesNormal'), eyesHeart=document.getElementById('eyesHeart');
+  const eyesStar=document.getElementById('eyesStar'), starL=document.getElementById('starL'), starR=document.getElementById('starR');
+  const eyesConfused=document.getElementById('eyesConfused');
+  const lidL=document.getElementById('lidL'), lidR=document.getElementById('lidR');
+  const eqBars=document.getElementById('eqBars');
+  const sleepZ=document.getElementById('sleepZ');
+  const questionMark=document.getElementById('questionMark');
+  const lightL=document.getElementById('lightL'), lightR=document.getElementById('lightR');
+  const footL=document.getElementById('footL'), footR=document.getElementById('footR');
+  const emojiPop=document.getElementById('emojiPop'), emojiPopText=document.getElementById('emojiPopText');
+
+  function starPts(cx,cy,r){const pts=[];for(let i=0;i<10;i++){const ang=-Math.PI/2+i*Math.PI/5;const rr=(i%2===0)?r:r*0.42;pts.push(`${cx+Math.cos(ang)*rr} ${cy+Math.sin(ang)*rr}`);}return 'M'+pts.join(' L')+' Z';}
+  starL.setAttribute('d',starPts(135,120,13)); starR.setAttribute('d',starPts(185,120,13));
+
+  let mood='happy', talking=false, talkUntil=0, t=0, last=performance.now();
+  const eyeShapes={happy:{w:26,h:20,rx:9},neutral:{w:26,h:14,rx:6},talk:{w:26,h:20,rx:9}};
+
+  function hideAllEyes(){eyesNormal.style.opacity='0';eyesHeart.style.opacity='0';eyesStar.style.opacity='0';eyesConfused.style.opacity='0';lidL.style.opacity='0';lidR.style.opacity='0';questionMark.style.opacity='0';}
+
+  function setMood(m){mood=m;talking=false;
+    hideAllEyes(); eqBars.style.opacity='0'; sleepZ.style.opacity='0';
+    lightL.setAttribute('fill','#3FE0D0'); lightR.setAttribute('fill','#3FE0D0');
+    if(m==='happy'||m==='neutral'||m==='talk'){
+      eyesNormal.style.opacity='1'; const es=eyeShapes[m];
+      [eyeL,eyeR].forEach(e=>{e.setAttribute('width',es.w);e.setAttribute('height',es.h);e.setAttribute('rx',es.rx);e.setAttribute('y',118-es.h/2);});
+      eyeL.setAttribute('x',135-es.w/2); eyeR.setAttribute('x',185-es.w/2);
+      if(m==='talk'){talking=true;talkUntil=performance.now()+2600;eqBars.style.opacity='1';}
+    } else if(m==='excited'){ eyesStar.style.opacity='1'; }
+    else if(m==='curious'){
+      eyesNormal.style.opacity='1';
+      [eyeL,eyeR].forEach(e=>{e.setAttribute('width',20);e.setAttribute('height',20);e.setAttribute('rx',10);e.setAttribute('y',108);});
+      eyeL.setAttribute('x',125); eyeR.setAttribute('x',175); questionMark.style.opacity='1';
+    } else if(m==='confused'){
+      eyesConfused.style.opacity='1'; questionMark.style.opacity='1';
+    } else if(m==='sleepy'){ lidL.style.opacity='1'; lidR.style.opacity='1'; sleepZ.style.opacity='1'; lightL.setAttribute('fill','#3A3F52'); lightR.setAttribute('fill','#3A3F52'); }
+    else if(m==='lovestruck'){ eyesHeart.style.opacity='1'; lightR.setAttribute('fill','#F2749A'); }
+  }
+
+  let nextBlink=1500, nextEmoji=5000;
+  const EMOJIS=['✨','😂','👀','💭','🎵','😎'];
+
+  function loop(now){const dt=now-last;last=now;t+=dt;
+    const bounceAmp=(mood==='excited')?6:(mood==='sleepy')?1.5:2.5;
+    const bounceSpd=(mood==='excited')?350:(mood==='sleepy')?1500:700;
+    bob.style.transformOrigin='160px 292px';
+    bob.setAttribute('transform',`translate(0 ${Math.sin(t/bounceSpd)*bounceAmp}) rotate(${Math.sin(t/1300)*0.7} 160 230)`);
+    headG.setAttribute('transform',(mood==='curious')?'rotate(-5 160 118)':(mood==='confused')?`rotate(${8+Math.sin(t/500)*3} 160 118)`:(mood==='sleepy')?'rotate(5 160 118)':'');
+    footL.setAttribute('transform','rotate(-2 128 266)');
+    footR.setAttribute('transform','rotate(2 192 266)');
+
+    if(mood==='lovestruck'){const p=1+Math.sin(t/220)*0.12;eyesHeart.style.transformOrigin='160px 118px';eyesHeart.setAttribute('transform',`scale(${p})`);}
+    if(mood==='excited'){const p=1+Math.sin(t/160)*0.15;eyesStar.style.transformOrigin='160px 120px';eyesStar.setAttribute('transform',`scale(${p})`);}
+    if(mood==='confused'){questionMark.setAttribute('transform',`translate(0 ${Math.sin(t/300)*3})`);}
+
+    if(mood==='happy'||mood==='neutral'){nextBlink-=dt;if(nextBlink<=0){eyeL.setAttribute('height','2');eyeR.setAttribute('height','2');setTimeout(()=>{if(mood==='happy'||mood==='neutral'){const es=eyeShapes[mood];eyeL.setAttribute('height',es.h);eyeR.setAttribute('height',es.h);}},110);nextBlink=1800+Math.random()*2500;}}
+
+    nextEmoji-=dt;
+    if(nextEmoji<=0 && emojiPop.style.opacity=='0'){
+      emojiPopText.textContent=EMOJIS[Math.floor(Math.random()*EMOJIS.length)];
+      let ey=58, age=0;
+      emojiPop.setAttribute('transform',`translate(160 ${ey})`);
+      emojiPop.style.opacity='1';
+      const anim=setInterval(()=>{age+=30;ey-=0.5;emojiPop.setAttribute('transform',`translate(160 ${ey})`);emojiPop.style.opacity=Math.max(0,1-age/1300);if(age>1300){clearInterval(anim);emojiPop.style.opacity='0';}},30);
+      nextEmoji=6000+Math.random()*5000;
+    }
+
+    if(talking){
+      if(now<talkUntil){const bars=eqBars.querySelectorAll('rect');bars.forEach((b,i)=>{const h=6+Math.abs(Math.sin(t/(90+i*30)))*22;b.setAttribute('height',h);b.setAttribute('y',150-h);});}
+      else {talking=false;setMood('happy');}
+    }
+    requestAnimationFrame(loop);
+  }
+  requestAnimationFrame(loop);
+  document.querySelectorAll('[data-m]').forEach(b=>b.addEventListener('click',()=>setMood(b.dataset.m)));
+  setMood('happy');
+})();
+</script>
+</div>

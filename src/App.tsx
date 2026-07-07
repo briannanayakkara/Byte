@@ -97,9 +97,16 @@ function App() {
 
   return (
     <div className="relative h-svh w-svw bg-gradient-to-b from-slate-900 to-slate-800 text-white">
-      <Character mood={mood} />
-
-      {thought ? <ThoughtBubble emojis={thought} /> : bubbleText && <SpeechBubble text={bubbleText} />}
+      <div className="flex h-full items-center justify-center">
+        {/* Sized to the character itself (not the full-height flex row), so
+            the bubble below anchors right above its head at any screen
+            size instead of floating at a fixed distance from the screen
+            top. */}
+        <div className="relative">
+          <Character mood={mood} />
+          {thought ? <ThoughtBubble emojis={thought} /> : bubbleText && <SpeechBubble text={bubbleText} />}
+        </div>
+      </div>
 
       <div className="absolute inset-x-0 bottom-4 flex flex-col items-center gap-3 px-4">
         <ChatInput onSend={handleSend} disabled={isSending} />
