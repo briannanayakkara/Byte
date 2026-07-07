@@ -7,7 +7,7 @@ import type { ChatMessage, Mood } from './lib/types.js'
 import { loadMemory, resolveUserId } from './lib/memory.js'
 import { saveTurn } from './lib/memory-write.js'
 import { callLLM } from './lib/llm.js'
-import { buildGreetingInstruction, buildMemoryBlock } from './lib/prompt.js'
+import { buildGreetingInstruction, buildMemoryBlock, buildSpecialDayLine } from './lib/prompt.js'
 
 // The 32 moods the LLM is allowed to pick (design doc §6a) -- `listening`
 // and `talking` are excluded because there's no voice/TTS feature yet to
@@ -148,9 +148,10 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     const query = new URL(req.url ?? '', 'http://localhost').searchParams
     const userId = resolveUserId(query)
     const memory = await loadMemory(userId)
+    const specialDayLine = buildSpecialDayLine(memory.user.name, memory.user.birthday)
     const systemPrompt = isGreeting
-      ? `${SYSTEM_PROMPT}\n\n${buildMemoryBlock(memory)}\n\n${buildGreetingInstruction()}`
-      : `${SYSTEM_PROMPT}\n\n${buildMemoryBlock(memory)}`
+      ? `${SYSTEM_PROMPT}\n\n${buildMemoryBlock(memory)}${specialDayLine}\n\n${buildGreetingInstruction()}`
+      : `${SYSTEM_PROMPT}\n\n${buildMemoryBlock(memory)}${specialDayLine}`
 
     // Greeting mode (spec §5c "Greeting on return"): no user message exists
     // yet, so there's nothing to save back -- read-only, unlike a real turn.

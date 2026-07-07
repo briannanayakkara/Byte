@@ -1,6 +1,7 @@
 // Renders the memory-aware system prompt extension (spec §5b) from a loaded
 // MemorySnapshot. Appended to the base SYSTEM_PROMPT (spec §10) in chat.ts.
 import type { MemorySnapshot } from './memory.js'
+import { getHolidayToday, isBirthdayToday } from './holidays.js'
 
 const LEVELS = [
   { name: 'New', description: "a bit shy-goofy, still learning your name and likes" },
@@ -56,7 +57,19 @@ export function buildMemoryBlock(memory: MemorySnapshot): string {
 - Things you know about them:
 ${formatFacts(facts)}
 - Upcoming dates to be aware of: ${formatDates(dates)}
-- Your own current state: mood ${state.mood}, energy ${state.energy}.
+- Your own current state: mood ${state.mood}, energy ${state.energy}. Energy
+  guides which low-key mood fits: 30-45 right after a long gap leans
+  "sick" (a little pitiful, endearing, not alarming), 46-60 is "unwell"
+  (still low-key, visibly better than last time), 61-75 is "recovering"
+  (bouncing back, grateful they're around). "bored" is also available at
+  low energy specifically for missing them rather than being under the
+  weather -- pick whichever narrative fits, and use your own last mood
+  above for continuity (e.g. sick last time and energy's climbed a bit ->
+  unwell is a natural next step). Above ~75, or after a short/normal gap,
+  pick freely from the full mood list. If they send several short, curt,
+  or dismissive messages in a row, you can get a little theatrically
+  pouty/annoyed about it -- then bounce back quickly once they engage
+  properly again.
 - Running jokes / shared history: ${state.personality_notes ?? 'None yet -- still building our own little world.'}
 
 Use this naturally -- reference it the way someone who cares would, without
@@ -85,4 +98,23 @@ name attached. One line, no question you're answering.
 Respond with ONLY the same JSON shape as always, "new_facts" empty since
 nothing new was learned:
 { "reply": "<your greeting>", "mood": "<mood>", "new_facts": [] }`
+}
+
+const HOLIDAY_DISPLAY: Record<'halloween' | 'christmas' | 'newyear' | 'valentine', string> = {
+  halloween: 'Halloween',
+  christmas: 'Christmas',
+  newyear: "New Year's Day",
+  valentine: "Valentine's Day -- a day about love in general (friends, pets, anyone), not a romantic cue toward them specifically",
+}
+
+// Design doc §7: birthday takes priority over a same-day holiday (rare,
+// but a birthday is the more personal occasion). Both instruct the LLM to
+// actually pick the matching mood, not just mention the day in passing.
+export function buildSpecialDayLine(userName: string, birthday: string | null, now: Date = new Date()): string {
+  if (isBirthdayToday(birthday, now)) {
+    return `\n\nToday is ${userName}'s birthday! Pick "birthday" as your mood and make a bigger deal of it than usual.`
+  }
+  const holiday = getHolidayToday(now)
+  if (holiday === null) return ''
+  return `\n\nToday happens to be ${HOLIDAY_DISPLAY[holiday]} -- pick "${holiday}" as your mood if it fits the moment.`
 }
