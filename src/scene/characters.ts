@@ -26,26 +26,6 @@ export interface CharacterConfig {
 
 export const CHARACTERS: CharacterConfig[] = [
   {
-    id: 'smurf',
-    label: 'Smurf',
-    modelPath: '/wild_smurf_sonic_rumble.glb',
-    targetHeight: 1.6,
-    rig: {
-      armPairs: [
-        ['L_Arm_A_00', 'L_Arm_B_08'],
-        ['R_Arm_A_022', 'R_Arm_B_023'],
-      ],
-      headBoneName: 'C_Head_06',
-      chestBoneName: 'C_Spine_C_05',
-      // Identified by directly inspecting the glTF: Sketchfab's Blender
-      // export names these mesh container nodes generically even though the
-      // underlying meshes are named Mesh_eye_..._R_Eye / L_Eye.
-      rightEyeName: 'Object_55',
-      leftEyeName: 'Object_56',
-      idleAnimationName: null,
-    },
-  },
-  {
     id: 'gobot',
     label: 'Gobot',
     modelPath: '/gobot.glb',
