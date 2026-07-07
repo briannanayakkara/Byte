@@ -1,17 +1,17 @@
 import { useEffect, useRef } from 'react'
 import type { Mood } from '../types'
 
-// Byte the robot -- v3 rig, ported wholesale from the user's hand-built
-// prototype covering all 34 EMO-style moods PLUS 12 new full-body moves
-// (walk/run/jump/flip/backflip/spin/moonwalk/wiggle/stretch/wave/
-// lookaround/sit) with floaty detached hands and procedural leg IK,
-// reference/character-prototypes/byte_robot_v3.html (design doc
+// Byte the robot -- v4 rig, ported wholesale from the user's hand-built
+// prototype covering all 46 EMO-style moods/moves with floaty detached
+// hands, procedural leg IK, and a personality body-language pass giving
+// every mood (not just moves) real full-body acting -- see
+// reference/character-prototypes/byte_robot_v4.html (v3 prototype/design
+// doc: reference/character-prototypes/byte_robot_v3.html,
 // docs/superpowers/specs/2026-07-07-byte-v3-character-and-continuity-design.md
-// §1). The 34 existing mood functions are unchanged from the prior
-// version of this file (same code) -- only the shell (legs/feet/hands/
-// rootG), the per-frame pose engine (renderFrame), and the 12 new move
-// functions are new. This component now takes no props: it mounts once,
-// runs its own animation loop, and exposes `window.Byte = { set, list }`
+// §1). The `M` mood dictionary is unchanged from v3 (same code, same 46
+// entries) -- only `renderFrame`'s per-mood personality block (the `P ===`
+// chain) and `headDy` are new. This component takes no props: it mounts
+// once, runs its own animation loop, and exposes `window.Byte = { set, list }`
 // as the only way to drive it (App.tsx calls `window.Byte?.set(...)`
 // instead of passing a `mood` prop).
 const NS = 'http://www.w3.org/2000/svg'
@@ -54,6 +54,9 @@ interface Extra {
   anim?: string
   dir?: number
   ph?: number
+  // New for the v4 personality pass: latches so the valentine kiss-blow
+  // only spawns one heart per cycle instead of one per frame.
+  valentineKiss?: boolean
 }
 
 interface HeartParticle {
@@ -381,7 +384,10 @@ export function Character() {
           arc(`M${exL - 11} ${cyL + 2} Q${exL} ${cyL + 10} ${exL + 11} ${cyL + 2}`, GREEN),
           arc(`M${exR - 11} ${cyL + 2} Q${exR} ${cyL + 10} ${exR + 11} ${cyL + 2}`, GREEN)
         )
-        topFx.append(txt(160, 80, 15, 'achoo'))
+        const ac = txt(160, 84, 16, 'achoo!')
+        ac.setAttribute('id', 'achooT')
+        ac.setAttribute('opacity', '0')
+        topFx.append(ac)
         extra.light = GREEN
         extra.tilt = 3
       },
@@ -621,11 +627,12 @@ export function Character() {
       let flip = 0
       let sxb = 1
       let headAdd = 0
+      let headDy = 0
       let gazeX = 0
       let fL = { dx: 0, dy: 0 }
       let fR = { dx: 0, dy: 0 }
-      const hL = { dx: Math.sin(t / 700) * 1.2, dy: Math.sin(t / 430) * 2.4 }
-      const hR = { dx: -Math.sin(t / 640) * 1.2, dy: Math.sin(t / 430 + 1.7) * 2.4 }
+      let hL = { dx: Math.sin(t / 700) * 1.2, dy: Math.sin(t / 430) * 2.4 }
+      let hR = { dx: -Math.sin(t / 640) * 1.2, dy: Math.sin(t / 430 + 1.7) * 2.4 }
       if (extra.shake) {
         ty += Math.sin(t / 45) * 2
         rot += Math.sin(t / 40) * 2
@@ -888,19 +895,405 @@ export function Character() {
         hR.dy += -36 + Math.abs(Math.sin(t / 170)) * 2
         rot = Math.sin(t / 170) * 1
       }
-      if (extra.dance) {
-        const dw = Math.sin(t / 220)
-        hL.dy += dw * 9 - 3
-        hR.dy += -dw * 9 - 3
-        hL.dx -= 3
-        hR.dx += 3
-      }
-      if (currentMood === 'excited') {
+      // ---- personality body language: every expression mood acts in character ----
+      const P = currentMood
+      if (P === 'challenging') {
+        // signature bit: squares up like a tiny boxer, stance wide, throws jabs
+        ty = 4 - Math.abs(Math.sin(t / 130)) * 3
+        rot = 2
+        rotCy = 252
+        headDy = 1
+        fL = { dx: -7, dy: 0 }
+        fR = { dx: 7, dy: 0 }
+        hL = { dx: 16, dy: -26 + Math.sin(t / 130) * 1.5 }
+        hR = { dx: -16, dy: -26 + Math.sin(t / 130 + 1.5) * 1.5 }
+        const c = (t % 2600) / 2600
+        const j = kf(c, [
+          [0.5, 0],
+          [0.58, 1],
+          [0.66, 0],
+        ])
+        if (Math.floor(t / 2600) % 2 === 0) {
+          hL.dx += j * 26
+          hL.dy += j * 4
+        } else {
+          hR.dx -= j * 26
+          hR.dy += j * 4
+        }
+      } else if (P === 'bored') {
+        // signature bit: dramatic slump + heavy sigh, hands hang lifeless
+        const p = (t % 5200) / 5200
+        ty =
+          6 +
+          kf(p, [
+            [0, 0],
+            [0.5, 0],
+            [0.58, -4],
+            [0.7, 3],
+            [0.82, 0],
+            [1, 0],
+          ])
+        rot = 0.5
+        headDy =
+          3 +
+          kf(p, [
+            [0.5, 0],
+            [0.58, -2],
+            [0.7, 2],
+            [0.82, 0],
+          ])
+        hL = { dx: 0, dy: 12 }
+        hR = { dx: 0, dy: 12 }
+        fL = { dx: 0, dy: 0 }
+        fR = { dx: 0, dy: -Math.max(0, Math.sin(t / 430)) * 2.2 }
+      } else if (P === 'pout') {
+        // hands on hips + huffy little foot stomp
+        const p = (t % 3400) / 3400
+        const st = kf(p, [
+          [0.55, 0],
+          [0.6, 1],
+          [0.66, 0],
+        ])
+        rot = -1.5
+        rotCy = 252
+        headDy = -1
+        hL = { dx: 9, dy: 11 }
+        hR = { dx: -9, dy: 11 }
+        fL = { dx: 0, dy: -st * 9 }
+        fR = { dx: 0, dy: 0 }
+        ty =
+          2 +
+          kf(p, [
+            [0.64, 0],
+            [0.68, 1.8],
+            [0.76, 0],
+          ])
+      } else if (P === 'smug') {
+        // chin up, lazy "just saying" flourish
+        rot = -2
+        rotCy = 258
+        ty = -1
+        headDy = -2
+        hL = { dx: 3, dy: 3 }
+        hR = { dx: -5 + Math.cos(t / 430) * 4, dy: -11 + Math.sin(t / 430) * 4 }
+      } else if (P === 'wink') {
+        // cheeky finger-gun pop
+        const e = Math.min(1, t / 320)
+        const s = e * e * (3 - 2 * e)
+        rot = 1.5
+        headAdd += 2
+        hR = { dx: -10 * s, dy: -24 * s + Math.sin(t / 300) * 1.5 }
+        hL = { dx: 1, dy: 4 + Math.sin(t / 700) * 1.2 }
+      } else if (P === 'annoyed') {
+        // hips + rapid foot tap + sharp huff
+        const p = (t % 2900) / 2900
+        hL = { dx: 9, dy: 10 }
+        hR = { dx: -9, dy: 10 }
+        fL = { dx: 0, dy: 0 }
+        fR = { dx: 0, dy: -Math.abs(Math.sin(t / 165)) * 3.5 }
+        ty =
+          1 +
+          kf(p, [
+            [0.5, 0],
+            [0.56, -2],
+            [0.64, 1.5],
+            [0.72, 0],
+          ])
+        headAdd += kf(p, [
+          [0.5, 0],
+          [0.56, -2],
+          [0.64, 0],
+        ])
+        rot = 1
+      } else if (P === 'grumpy') {
+        // arms folded, hunched hmpf
+        ty = 3
+        headDy = 2
+        rot = 0
+        hL = { dx: 41, dy: -3 + Math.sin(t / 900) }
+        hR = { dx: -41, dy: -3 + Math.sin(t / 900) }
+        fL = { dx: 2, dy: 0 }
+        fR = { dx: -2, dy: 0 }
+      } else if (P === 'proud') {
+        // full power pose: hands on hips, feet planted wide
+        ty = -2
+        rot = -2
+        rotCy = 258
+        headDy = -2
+        hL = { dx: 10, dy: 10 }
+        hR = { dx: -10, dy: 10 }
+        fL = { dx: -5, dy: 0 }
+        fR = { dx: 5, dy: 0 }
+      } else if (P === 'dizzy') {
+        // woozy stagger, arms out for balance
+        rot = Math.sin(t / 310) * 3.5 + Math.sin(t / 470) * 2.5
+        rotCy = 252
+        ty = 1 + Math.sin(t / 350) * 2
+        headAdd += Math.sin(t / 240) * 9 + Math.sin(t / 390) * 5
+        fL = { dx: Math.sin(t / 720) * 4, dy: 0 }
+        fR = { dx: Math.sin(t / 720 + 2.1) * 4, dy: 0 }
+        hL = { dx: -9 + Math.sin(t / 300) * 5, dy: -10 }
+        hR = { dx: 9 - Math.sin(t / 300) * 5, dy: -10 }
+      } else if (P === 'thinking') {
+        // hand taps the chin
+        hR = { dx: -37, dy: -42 + Math.sin(t / 450) * 1.5 }
+        hL = { dx: 6, dy: 4 }
+        rot = Math.sin(t / 1600)
+      } else if (P === 'scared') {
+        // hands to face, cowering shiver, knock-knees
+        ty = 4 + Math.sin(t / 50) * 1.6
+        rot = -1
+        hL = { dx: 30, dy: -45 + Math.sin(t / 60) }
+        hR = { dx: -30, dy: -45 + Math.sin(t / 60 + 1) }
+        fL = { dx: 6, dy: 0 }
+        fR = { dx: -6, dy: 0 }
+      } else if (P === 'surprised') {
+        // startle hop, hands fly out then hover half-raised
+        const s = Math.min(1, t / 520)
+        ty = kf(s, [
+          [0, 0],
+          [0.25, -9],
+          [0.55, 1.5],
+          [0.78, 0],
+          [1, 0],
+        ])
+        const f = kf(s, [
+          [0, 0],
+          [0.2, 1],
+          [0.6, 0.35],
+          [1, 0.35],
+        ])
+        hL = { dx: -8 * f - 2, dy: -26 * f - 4 }
+        hR = { dx: 8 * f + 2, dy: -26 * f - 4 }
+        fL = { dx: -3, dy: 0 }
+        fR = { dx: 3, dy: 0 }
+      } else if (P === 'excited') {
+        // can't-contain-it: cheer + tippy-taps
         const eb = Math.sin(t / 160) * 3
-        hL.dy += -9 + eb
-        hR.dy += -9 - eb
-        hL.dx -= 4
-        hR.dx += 4
+        hL = { dx: -5, dy: -10 + eb }
+        hR = { dx: 5, dy: -10 - eb }
+        fL = { dx: 0, dy: -Math.max(0, Math.sin(t / 140)) * 3 }
+        fR = { dx: 0, dy: -Math.max(0, Math.sin(t / 140 + Math.PI)) * 3 }
+      } else if (P === 'content') {
+        // blissed-out sway
+        rot = Math.sin(t / 1300) * 1.5
+        ty = Math.sin(t / 950) * 2
+        headAdd += 2
+        hL = { dx: Math.sin(t / 900) * 1.5, dy: 3 + Math.sin(t / 700) * 1.5 }
+        hR = { dx: -Math.sin(t / 900) * 1.5, dy: 3 + Math.sin(t / 760) * 1.5 }
+      } else if (P === 'curious') {
+        // the classic pet head-tilt swap, one hand raised: "hm?"
+        const p = (t % 4600) / 4600
+        headAdd += kf(p, [
+          [0, -6],
+          [0.4, -6],
+          [0.5, 6],
+          [0.9, 6],
+          [1, -6],
+        ])
+        hR = { dx: -4, dy: -13 + Math.sin(t / 500) * 1.5 }
+        ty -= 1
+      } else if (P === 'confused') {
+        // scratches the side of his head
+        hR = { dx: 8, dy: -92 + Math.sin(t / 140) * 2.5 }
+        hL = { dx: 2, dy: 5 }
+      } else if (P === 'sad') {
+        // heavy heart: droop, toes in, long sighs
+        const p = (t % 5600) / 5600
+        ty =
+          4 +
+          Math.sin(t / 1500) * 1.2 +
+          kf(p, [
+            [0.5, 0],
+            [0.58, -2.5],
+            [0.72, 2],
+            [0.85, 0],
+          ])
+        headDy = 3.5
+        hL = { dx: 2, dy: 13 }
+        hR = { dx: -2, dy: 13 }
+        fL = { dx: 5, dy: 0 }
+        fR = { dx: -5, dy: 0 }
+      } else if (P === 'laughing') {
+        // holds his belly
+        hL = { dx: 31, dy: 9 + Math.abs(Math.sin(t / 120)) * 2 }
+        hR = { dx: -31, dy: 9 + Math.abs(Math.sin(t / 120 + 0.6)) * 2 }
+        headDy = -1 + Math.abs(Math.sin(t / 120))
+      } else if (P === 'lovestruck') {
+        // hands clasped at the chest, swooning
+        rot = Math.sin(t / 620) * 2
+        rotCy = 252
+        hL = { dx: 45 + Math.sin(t / 620) * 2, dy: -5 }
+        hR = { dx: -45 + Math.sin(t / 620) * 2, dy: -5 }
+        headAdd += Math.sin(t / 620) * 2
+      } else if (P === 'sick') {
+        // droopy... ah... ah... ACHOO!
+        const p = (t % 4600) / 4600
+        ty =
+          2.5 +
+          kf(p, [
+            [0.6, 0],
+            [0.7, -2],
+            [0.735, 5],
+            [0.82, 3],
+            [0.95, 0],
+          ])
+        headDy =
+          2 +
+          kf(p, [
+            [0.55, 0],
+            [0.6, -2],
+            [0.63, 0],
+            [0.66, -3],
+            [0.7, -4],
+            [0.735, 7],
+            [0.84, 2],
+            [0.95, 0],
+          ])
+        headAdd += kf(p, [
+          [0.7, 0],
+          [0.735, 6],
+          [0.85, 0],
+        ])
+        hL = { dx: 2, dy: 9 }
+        hR = {
+          dx: -2,
+          dy:
+            9 +
+            kf(p, [
+              [0.66, 0],
+              [0.71, -16],
+              [0.82, 0],
+            ]),
+        }
+        const at = svg?.querySelector<SVGTextElement>('#achooT')
+        if (at) {
+          at.setAttribute(
+            'opacity',
+            kf(p, [
+              [0.71, 0],
+              [0.735, 1],
+              [0.9, 1],
+              [0.98, 0],
+            ]).toFixed(2)
+          )
+        }
+      } else if (P === 'unwell') {
+        // weak sway + little shiver bursts
+        const p = (t % 4000) / 4000
+        ty = 5 + Math.sin(t / 900) * 1.5 + (p > 0.5 && p < 0.62 ? Math.sin(t / 42) * 1.6 : 0)
+        rot = Math.sin(t / 1100) * 1.5
+        headDy = 3
+        hL = { dx: 1, dy: 12 }
+        hR = { dx: -1, dy: 12 }
+        fL = { dx: 3, dy: 0 }
+        fR = { dx: -3, dy: 0 }
+      } else if (P === 'recovering') {
+        // gentle deep breaths
+        ty = 1 + Math.sin(t / 1250) * 2.5
+        headDy = 1
+        hL = { dx: 2, dy: 6 + Math.sin(t / 1250) * 1.5 }
+        hR = { dx: -2, dy: 6 + Math.sin(t / 1250 + 0.4) * 1.5 }
+      } else if (P === 'listening') {
+        // hand cupped to the ear, mm-hm nods
+        const p = (t % 2200) / 2200
+        hR = { dx: 9, dy: -70 + Math.sin(t / 600) * 1.5 }
+        hL = { dx: 0, dy: 6 }
+        headDy = kf(p, [
+          [0.42, 0],
+          [0.5, 2.4],
+          [0.58, 0],
+          [0.66, 1.8],
+          [0.74, 0],
+        ])
+        headAdd += 3
+      } else if (P === 'talking') {
+        // talks with his hands
+        hL = { dx: 6 + Math.sin(t / 310) * 4, dy: -6 + Math.sin(t / 240) * 5 }
+        hR = { dx: -6 - Math.sin(t / 370) * 4, dy: -6 + Math.sin(t / 240 + 2.2) * 5 }
+        headAdd += Math.sin(t / 300) * 1.5
+        headDy = Math.sin(t / 240) * 0.8
+      } else if (P === 'dancing') {
+        // two-step + hand pumps with the beat
+        const dw = Math.sin(t / 220)
+        hL = { dx: -3, dy: dw * 9 - 3 + Math.sin(t / 430) * 1.5 }
+        hR = { dx: 3, dy: -dw * 9 - 3 + Math.sin(t / 430 + 1) * 1.5 }
+        fL = { dx: dw * 5, dy: -Math.max(0, dw) * 4 }
+        fR = { dx: -dw * 5, dy: -Math.max(0, -dw) * 4 }
+      } else if (P === 'sleepy') {
+        // nodding off... snaps awake! + eye rub
+        const p = (t % 5200) / 5200
+        headDy = kf(p, [
+          [0, 0],
+          [0.45, 4.5],
+          [0.55, 5],
+          [0.6, -0.5],
+          [0.66, 0],
+          [1, 0],
+        ])
+        ty += kf(p, [
+          [0.55, 0],
+          [0.6, -1.6],
+          [0.68, 0],
+        ])
+        hR = { dx: -36 + Math.cos(t / 300) * 2, dy: -74 + Math.sin(t / 300) * 2 }
+        hL = { dx: 0, dy: 9 }
+      } else if (P === 'dozing') {
+        // out cold (standing up)
+        headDy = 5
+        hL = { dx: 1, dy: 14 }
+        hR = { dx: -1, dy: 14 }
+        fL = { dx: -3, dy: 0 }
+        fR = { dx: 3, dy: 0 }
+      } else if (P === 'birthday') {
+        // party bounce, arms pumping
+        ty = -Math.abs(Math.sin(t / 270)) * 5
+        const bw = Math.sin(t / 270)
+        hL = { dx: -3, dy: -9 + bw * 7 }
+        hR = { dx: 3, dy: -9 - bw * 7 }
+        headAdd += Math.sin(t / 540) * 2
+      } else if (P === 'christmas') {
+        // catching snowflakes, palm out
+        rot = Math.sin(t / 1000) * 2
+        headDy = -1
+        hR = { dx: -13, dy: -9 + Math.sin(t / 800) * 2 }
+        hL = { dx: 2, dy: 4 + Math.sin(t / 700) * 1.5 }
+      } else if (P === 'halloween') {
+        // woooOOoo ghost arms, feet dangling
+        hL = { dx: -6, dy: -17 + Math.sin(t / 210) * 3.5 }
+        hR = { dx: 6, dy: -17 + Math.sin(t / 210 + Math.PI) * 3.5 }
+        fL = { dx: 0, dy: 3 + Math.sin(t / 520) * 1.2 }
+        fR = { dx: 0, dy: 3 + Math.sin(t / 520 + 1.5) * 1.2 }
+      } else if (P === 'newyear') {
+        // countdown hype bounce
+        ty = -Math.abs(Math.sin(t / 240)) * 4
+        hL = { dx: -4, dy: -12 + Math.sin(t / 240) * 4 }
+        hR = { dx: 4, dy: -12 - Math.sin(t / 240) * 4 }
+      } else if (P === 'valentine') {
+        // hand to the cheek... then blows a kiss
+        const p = (t % 3800) / 3800
+        rot = Math.sin(t / 640) * 1.5
+        rotCy = 252
+        const r = kf(p, [
+          [0.5, 0],
+          [0.6, 1],
+          [0.72, 1],
+          [0.8, 0],
+        ])
+        const fl = kf(p, [
+          [0.7, 0],
+          [0.78, 1],
+          [0.88, 0],
+        ])
+        hR = { dx: -30 * r + 14 * fl, dy: -44 * r + 6 * fl }
+        hL = { dx: 44, dy: -5 }
+        if (fl > 0.6 && !extra.valentineKiss) {
+          extra.valentineKiss = true
+          const hh = heartAt(198, 158, 0.9)
+          fx.appendChild(hh)
+          hearts.push({ el: hh, x: 198, y: 158, s: 0.9, sway: 0 })
+        }
+        if (p < 0.5) extra.valentineKiss = false
       }
 
       // ---- landing detection -> dust puff at the feet ----
@@ -947,7 +1340,10 @@ export function Character() {
       if (extra.spin) {
         headG.setAttribute('transform', `rotate(${(t / 12) % 360} 160 116)`)
       } else {
-        headG.setAttribute('transform', tilt ? `rotate(${tilt} 160 116)` : '')
+        let ht = ''
+        if (headDy) ht += `translate(0 ${headDy.toFixed(2)}) `
+        if (tilt) ht += `rotate(${tilt} 160 116)`
+        headG.setAttribute('transform', ht)
       }
       const gaze = svg?.querySelector<SVGGElement>('#gaze')
       if (gaze) gaze.setAttribute('transform', `translate(${gazeX} 0)`)
