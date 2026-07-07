@@ -7,44 +7,6 @@ import { ThoughtBubble } from './components/ThoughtBubble'
 import { fetchGreeting, sendChatMessage } from './lib/chatApi'
 import type { ChatMessage, Mood } from './types'
 
-// Temporary: extended to all 34 for manual verification while porting the
-// new mood system (Task 3) -- this whole harness is deleted in Task 10.
-const MOODS: Mood[] = [
-  'happy',
-  'excited',
-  'content',
-  'neutral',
-  'curious',
-  'confused',
-  'sad',
-  'surprised',
-  'laughing',
-  'lovestruck',
-  'wink',
-  'smug',
-  'annoyed',
-  'grumpy',
-  'challenging',
-  'pout',
-  'bored',
-  'proud',
-  'dizzy',
-  'thinking',
-  'scared',
-  'sick',
-  'unwell',
-  'recovering',
-  'listening',
-  'talking',
-  'dancing',
-  'sleepy',
-  'dozing',
-  'birthday',
-  'christmas',
-  'halloween',
-  'newyear',
-  'valentine',
-]
 // Spec §8 error handling: in-character fallback line + confused mood if
 // /api/chat fails.
 const ERROR_REPLY = "aw beans, my brain short-circuited — you're just too cute. say that again?"
@@ -149,26 +111,6 @@ function App() {
 
       <div className="absolute inset-x-0 bottom-4 flex flex-col items-center gap-3 px-4">
         <ChatInput onSend={handleSend} disabled={isSending} />
-
-        {/* Temporary dev harness for verifying moods (spec §9 step 3) --
-            the real mood driver is /api/chat's returned mood, wired in
-            step 5. */}
-        <div className="flex flex-col items-center gap-2 border-t border-white/10 pt-3">
-          <div className="flex flex-wrap justify-center gap-2">
-            {MOODS.map((m) => (
-              <button
-                key={m}
-                type="button"
-                onClick={() => setMood(m)}
-                className={`rounded-full px-3 py-1 text-sm capitalize transition-colors ${
-                  m === mood ? 'bg-white text-slate-900' : 'bg-white/10 text-white hover:bg-white/20'
-                }`}
-              >
-                {m}
-              </button>
-            ))}
-          </div>
-        </div>
       </div>
     </div>
   )
