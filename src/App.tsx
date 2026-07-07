@@ -5,7 +5,7 @@ import { MoodBubble } from './components/MoodBubble'
 import { SpeechBubble } from './components/SpeechBubble'
 import { ThoughtBubble } from './components/ThoughtBubble'
 import { fetchGreeting, sendChatMessage } from './lib/chatApi'
-import type { ChatMessage } from './types'
+import type { ChatMessage, Mood } from './types'
 
 // Spec §8 error handling: in-character fallback line + confused mood if
 // /api/chat fails.
@@ -30,6 +30,15 @@ const THOUGHTS = [
 const THOUGHT_MIN_DELAY_MS = 20_000
 const THOUGHT_MAX_DELAY_MS = 40_000
 const THOUGHT_VISIBLE_MS = 3_200
+
+// Idle play: while nobody's chatting, Byte periodically does something
+// playful on its own (client-side random, no LLM call) instead of just
+// standing there, and keeps cycling through moves until the user actually
+// sends something. "wave" is deliberately excluded -- that's reserved for
+// the greeting-on-open moment, not random idling.
+const IDLE_MOVES: Mood[] = ['dancing', 'flip', 'backflip', 'spin', 'jump', 'wiggle', 'stretch', 'lookaround', 'walk', 'run', 'moonwalk', 'sit']
+const IDLE_MOVE_MIN_DELAY_MS = 15_000
+const IDLE_MOVE_MAX_DELAY_MS = 35_000
 
 function App() {
   const [messages, setMessages] = useState<ChatMessage[]>([])
@@ -72,6 +81,24 @@ function App() {
         if (!isSendingRef.current && !hasBubbleRef.current) {
           setThought(THOUGHTS[Math.floor(Math.random() * THOUGHTS.length)])
           setTimeout(() => setThought(null), THOUGHT_VISIBLE_MS)
+        }
+        scheduleNext()
+      }, delay)
+    }
+    scheduleNext()
+    return () => clearTimeout(timeoutId)
+  }, [])
+
+  useEffect(() => {
+    let timeoutId: ReturnType<typeof setTimeout>
+    function scheduleNext() {
+      const delay = IDLE_MOVE_MIN_DELAY_MS + Math.random() * (IDLE_MOVE_MAX_DELAY_MS - IDLE_MOVE_MIN_DELAY_MS)
+      timeoutId = setTimeout(() => {
+        // Only play while nothing real is happening -- a reply landing
+        // right after would just override the move anyway, so skip it
+        // mid-send rather than trigger a pose that's immediately replaced.
+        if (!isSendingRef.current) {
+          window.Byte?.set(IDLE_MOVES[Math.floor(Math.random() * IDLE_MOVES.length)])
         }
         scheduleNext()
       }, delay)
