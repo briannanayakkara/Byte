@@ -5,7 +5,7 @@ import { MoodBubble } from './components/MoodBubble'
 import { SpeechBubble } from './components/SpeechBubble'
 import { ThoughtBubble } from './components/ThoughtBubble'
 import { fetchGreeting, sendChatMessage } from './lib/chatApi'
-import type { ChatMessage, Mood } from './types'
+import type { ChatMessage } from './types'
 
 // Spec §8 error handling: in-character fallback line + confused mood if
 // /api/chat fails.
@@ -32,7 +32,6 @@ const THOUGHT_MAX_DELAY_MS = 40_000
 const THOUGHT_VISIBLE_MS = 3_200
 
 function App() {
-  const [mood, setMood] = useState<Mood>('neutral')
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [isSending, setIsSending] = useState(false)
   // Spec §5c "Greeting on return" -- kept separate from `messages` so it
@@ -43,10 +42,16 @@ function App() {
   const hasBubbleRef = useRef(false)
 
   useEffect(() => {
+    // Design doc §2/§3: wave immediately (a greeting gesture, not an
+    // invented mood claim) while the greeting call is in flight, then
+    // switch to whatever mood the greeting actually resolves to -- which
+    // now reflects Byte's real last-persisted state (design doc §3), not a
+    // fresh per-device guess.
+    window.Byte?.set('wave')
     fetchGreeting()
       .then(({ reply, mood: greetingMood }) => {
         setGreeting(reply)
-        setMood(greetingMood)
+        window.Byte?.set(greetingMood)
       })
       .catch(() => {
         // Non-critical: no greeting, no mood change -- just no bubble yet.
@@ -83,10 +88,10 @@ function App() {
     try {
       const { reply, mood: replyMood } = await sendChatMessage(text, history)
       setMessages((prev) => [...prev, { role: 'assistant', content: reply }])
-      setMood(replyMood)
+      window.Byte?.set(replyMood)
     } catch {
       setMessages((prev) => [...prev, { role: 'assistant', content: ERROR_REPLY }])
-      setMood('confused')
+      window.Byte?.set('confused')
     } finally {
       setIsSending(false)
     }
@@ -103,8 +108,8 @@ function App() {
             size instead of floating at a fixed distance from the screen
             top. */}
         <div className="relative">
-          <Character mood={mood} />
-          <MoodBubble mood={mood} />
+          <Character />
+          <MoodBubble />
           {thought ? <ThoughtBubble emojis={thought} /> : bubbleText && <SpeechBubble text={bubbleText} />}
         </div>
       </div>

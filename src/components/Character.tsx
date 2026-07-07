@@ -1,16 +1,19 @@
 import { useEffect, useRef } from 'react'
 import type { Mood } from '../types'
 
-// Byte the robot -- ported wholesale from the user's hand-built prototype
-// covering all 34 EMO-style moods,
-// reference/character-prototypes/byte_robot_all_moods.html (design doc
-// docs/superpowers/specs/2026-07-07-emo-personality-retune-design.md §6).
-// The prototype's per-mood draw-function dictionary + particle-effect
-// system replaces this file's earlier static-SVG-group-per-mood approach,
-// which didn't scale past a handful of moods. Coordinates match the
-// prototype exactly rather than this file's previous slightly-different
-// ones (design doc §6b) -- imperceptible visual diff, one fewer thing to
-// reconcile.
+// Byte the robot -- v3 rig, ported wholesale from the user's hand-built
+// prototype covering all 34 EMO-style moods PLUS 12 new full-body moves
+// (walk/run/jump/flip/backflip/spin/moonwalk/wiggle/stretch/wave/
+// lookaround/sit) with floaty detached hands and procedural leg IK,
+// reference/character-prototypes/byte_robot_v3.html (design doc
+// docs/superpowers/specs/2026-07-07-byte-v3-character-and-continuity-design.md
+// §1). The 34 existing mood functions are unchanged from the prior
+// version of this file (same code) -- only the shell (legs/feet/hands/
+// rootG), the per-frame pose engine (renderFrame), and the 12 new move
+// functions are new. This component now takes no props: it mounts once,
+// runs its own animation loop, and exposes `window.Byte = { set, list }`
+// as the only way to drive it (App.tsx calls `window.Byte?.set(...)`
+// instead of passing a `mood` prop).
 const NS = 'http://www.w3.org/2000/svg'
 const TEAL = '#3FE0D0'
 const PINK = '#F2749A'
@@ -25,12 +28,8 @@ const exL = 135
 const exR = 185
 const cyL = 118
 
-interface CharacterProps {
-  mood: Mood
-}
-
-// Per-mood flags the animation loop reads every frame -- set by whichever
-// mood function ran last (see `M` below), cleared on every mood change.
+// Per-mood/move flags the animation loop reads every frame -- set by
+// whichever function in `M` ran last, cleared on every `set()` call.
 interface Extra {
   blink?: boolean
   drowsyBlink?: boolean
@@ -51,6 +50,10 @@ interface Extra {
   eq?: boolean
   earPulse?: boolean
   light?: string
+  // New for the v3 move engine:
+  anim?: string
+  dir?: number
+  ph?: number
 }
 
 interface HeartParticle {
@@ -75,10 +78,15 @@ interface ZzzParticle {
   x: number
   y: number
 }
+interface DustParticle {
+  el: SVGElement
+  vx: number
+  vy: number
+  life: number
+}
 
-export function Character({ mood }: CharacterProps) {
+export function Character() {
   const svgRef = useRef<SVGSVGElement>(null)
-  const applyMoodRef = useRef<(mood: Mood) => void>(null)
 
   useEffect(() => {
     const svg = svgRef.current
@@ -92,8 +100,18 @@ export function Character({ mood }: CharacterProps) {
     const fx = q<SVGGElement>('#fx')
     const lightL = q<SVGCircleElement>('#lightL')
     const lightR = q<SVGCircleElement>('#lightR')
+    const rootG = q<SVGGElement>('#rootG')
+    const shadow = q<SVGEllipseElement>('#shadow')
+    const legL = q<SVGPathElement>('#legL')
+    const footLa = q<SVGEllipseElement>('#footLa')
+    const footLb = q<SVGEllipseElement>('#footLb')
+    const legR = q<SVGPathElement>('#legR')
+    const footRa = q<SVGEllipseElement>('#footRa')
+    const footRb = q<SVGEllipseElement>('#footRb')
+    const handL = q<SVGGElement>('#handL')
+    const handR = q<SVGGElement>('#handR')
 
-    let currentMood: Mood = mood
+    let currentMood: Mood = 'neutral'
     let t = 0
     let last = performance.now()
     let blinkT = 1500
@@ -103,6 +121,8 @@ export function Character({ mood }: CharacterProps) {
     let confetti: ConfettiParticle[] = []
     let snow: SnowParticle[] = []
     let zzz: ZzzParticle[] = []
+    let dusts: DustParticle[] = []
+    let lastAir = 0
 
     function elem(tag: string, attrs: Record<string, string | number>): SVGElement {
       const e = document.createElementNS(NS, tag) as SVGElement
@@ -145,6 +165,58 @@ export function Character({ mood }: CharacterProps) {
       })
       e.textContent = str
       return e
+    }
+    // Smoothstep keyframe interpolation through [phase, value] points.
+    function kf(p: number, pts: [number, number][]): number {
+      if (p <= pts[0][0]) return pts[0][1]
+      for (let i = 1; i < pts.length; i++) {
+        const a = pts[i - 1]
+        const b = pts[i]
+        if (p <= b[0]) {
+          const q = (p - a[0]) / (b[0] - a[0])
+          const s = q * q * (3 - 2 * q)
+          return a[1] + (b[1] - a[1]) * s
+        }
+      }
+      return pts[pts.length - 1][1]
+    }
+    // Redraws a leg as a quadratic curve hip->foot; knee bends forward
+    // automatically when the leg is compressed (crouch) or the foot is
+    // lifted (step).
+    function setLeg(
+      leg: SVGPathElement,
+      ea: SVGEllipseElement,
+      eb: SVGEllipseElement,
+      hx: number,
+      hy: number,
+      bx: number,
+      by: number,
+      dx: number,
+      dy: number,
+      tw: number
+    ) {
+      const fpx = bx + dx
+      const fpy = by + dy
+      ea.setAttribute('cx', String(fpx))
+      ea.setAttribute('cy', String(fpy))
+      eb.setAttribute('cx', String(fpx))
+      eb.setAttribute('cy', String(fpy))
+      const ex = fpx + tw * 6
+      const ey = fpy - 6
+      const bl = Math.hypot(bx + tw * 6 - hx, by - 6 - hy)
+      const ln = Math.hypot(ex - hx, ey - hy)
+      const bend = Math.min(16, Math.max(0, (bl - ln) * 0.9) + Math.max(0, -dy) * 0.55)
+      const kx = (hx + ex) / 2 + bend
+      const ky = (hy + ey) / 2 - bend * 0.2
+      leg.setAttribute('d', `M${hx} ${hy} Q${kx} ${ky} ${ex} ${ey}`)
+    }
+    function dust(wx: number) {
+      for (let i = 0; i < 8; i++) {
+        const s = i < 4 ? -1 : 1
+        const d = elem('circle', { cx: wx + s * (52 + Math.random() * 26), cy: 268 + Math.random() * 6, r: 3 + Math.random() * 3.5, fill: '#8B98AC', opacity: 0.6 })
+        fx.appendChild(d)
+        dusts.push({ el: d, vx: s * (1 + Math.random() * 1.3), vy: -0.5 - Math.random() * 0.8, life: 1 })
+      }
     }
 
     const M: Record<Mood, () => void> = {
@@ -417,10 +489,95 @@ export function Character({ mood }: CharacterProps) {
         extra.hearts = true
         extra.pulse = 220
       },
+      // ---- Moves: full-body EMO-style animations (renderFrame drives the pose) ----
+      walk() {
+        screen.append(eye(exL, cyL, 26, 20, 9), eye(exR, cyL, 26, 20, 9))
+        extra.blink = true
+        extra.anim = 'walk'
+      },
+      run() {
+        screen.append(elem('circle', { cx: exL, cy: cyL, r: 12, fill: TEAL }), elem('circle', { cx: exR, cy: cyL, r: 12, fill: TEAL }))
+        const g = elem('g', { id: 'streaks' })
+        for (let i = 0; i < 3; i++) g.append(elem('rect', { x: 0, y: 0, width: 26, height: 5, rx: 2.5, fill: TEAL, opacity: 0 }))
+        fx.appendChild(g)
+        extra.anim = 'run'
+      },
+      jump() {
+        screen.append(
+          elem('circle', { cx: exL, cy: cyL, r: 14, fill: TEAL }),
+          elem('circle', { cx: exR, cy: cyL, r: 14, fill: TEAL }),
+          elem('circle', { cx: exL, cy: cyL - 2, r: 5, fill: '#0A0C14' }),
+          elem('circle', { cx: exR, cy: cyL - 2, r: 5, fill: '#0A0C14' })
+        )
+        extra.anim = 'jump'
+      },
+      flip() {
+        screen.append(star(exL, cyL, 12), star(exR, cyL, 12))
+        extra.anim = 'flip'
+        extra.dir = 1
+      },
+      backflip() {
+        screen.append(star(exL, cyL, 12), star(exR, cyL, 12))
+        extra.anim = 'flip'
+        extra.dir = -1
+      },
+      spin() {
+        screen.append(
+          elem('path', { d: `M${exL} ${cyL} m-9,0 a9,9 0 1,1 18,0 a5,5 0 1,1 -10,0 a2,2 0 1,1 4,0`, fill: 'none', stroke: TEAL, 'stroke-width': 3 }),
+          elem('path', { d: `M${exR} ${cyL} m-9,0 a9,9 0 1,1 18,0 a5,5 0 1,1 -10,0 a2,2 0 1,1 4,0`, fill: 'none', stroke: TEAL, 'stroke-width': 3 })
+        )
+        extra.anim = 'spinP'
+      },
+      moonwalk() {
+        screen.append(
+          elem('path', { d: `M${exL - 13} ${cyL + 3} Q${exL} ${cyL - 5} ${exL + 13} ${cyL - 1}`, fill: 'none', stroke: TEAL, 'stroke-width': 7, 'stroke-linecap': 'round' }),
+          elem('path', { d: `M${exR - 13} ${cyL - 1} Q${exR} ${cyL - 5} ${exR + 13} ${cyL + 3}`, fill: 'none', stroke: TEAL, 'stroke-width': 7, 'stroke-linecap': 'round' })
+        )
+        topFx.append(txt(202, 78, 18, '♪', GOLD))
+        extra.anim = 'moon'
+      },
+      wiggle() {
+        screen.append(
+          arc(`M${exL - 12} ${cyL + 2} Q${exL} ${cyL + 10} ${exL + 12} ${cyL + 2}`, TEAL, 6),
+          arc(`M${exR - 12} ${cyL + 2} Q${exR} ${cyL + 10} ${exR + 12} ${cyL + 2}`, TEAL, 6)
+        )
+        extra.hearts = true
+        extra.anim = 'wiggle'
+      },
+      stretch() {
+        screen.append(
+          arc(`M${exL - 12} ${cyL - 2} Q${exL} ${cyL + 6} ${exL + 12} ${cyL - 2}`, TEAL, 7),
+          arc(`M${exR - 12} ${cyL - 2} Q${exR} ${cyL + 6} ${exR + 12} ${cyL - 2}`, TEAL, 7)
+        )
+        topFx.append(elem('ellipse', { id: 'yawnS', cx: 160, cy: 140, rx: 3, ry: 3, fill: 'none', stroke: TEAL, 'stroke-width': 2.5, opacity: 0 }))
+        extra.anim = 'stretch'
+      },
+      lookaround() {
+        const g = elem('g', { id: 'gaze' })
+        g.append(elem('circle', { cx: exL, cy: cyL - 2, r: 11, fill: TEAL }), elem('circle', { cx: exR, cy: cyL - 2, r: 11, fill: TEAL }))
+        screen.append(g)
+        extra.blink = true
+        extra.anim = 'look'
+      },
+      wave() {
+        screen.append(eye(exL, cyL, 26, 20, 9), eye(exR, cyL, 26, 20, 9))
+        topFx.append(txt(216, 68, 15, 'hi!', GOLD))
+        extra.blink = true
+        extra.anim = 'wave'
+      },
+      sit() {
+        screen.append(
+          arc(`M${exL - 12} ${cyL + 2} Q${exL} ${cyL + 10} ${exL + 12} ${cyL + 2}`, TEAL, 6),
+          arc(`M${exR - 12} ${cyL + 2} Q${exR} ${cyL + 10} ${exR + 12} ${cyL + 2}`, TEAL, 6)
+        )
+        extra.blink = true
+        extra.anim = 'sit'
+      },
     }
 
     function setMood(m: Mood) {
       currentMood = m
+      t = 0
       clearGroup(screen)
       clearGroup(topFx)
       clearGroup(fx)
@@ -429,6 +586,8 @@ export function Character({ mood }: CharacterProps) {
       confetti = []
       snow = []
       zzz = []
+      dusts = []
+      lastAir = 0
       lightL.setAttribute('fill', TEAL)
       lightR.setAttribute('fill', TEAL)
       lightL.setAttribute('opacity', '1')
@@ -442,18 +601,31 @@ export function Character({ mood }: CharacterProps) {
         lightR.setAttribute('fill', extra.light)
       }
       blinkT = 1600 + Math.random() * 1500
+      window.dispatchEvent(new CustomEvent<Mood>('byte:change', { detail: m }))
     }
-    applyMoodRef.current = setMood
 
-    function loop(now: number) {
-      const dt = now - last
-      last = now
+    window.Byte = {
+      set: setMood,
+      list: () => Object.keys(M) as Mood[],
+    }
+
+    function renderFrame(dt: number) {
       t += dt
-
       const slow = extra.slow ? 1600 : 620
       const amp = currentMood === 'excited' || currentMood === 'dancing' ? 7 : extra.slow ? 1.5 : 3
       let ty = Math.sin(t / slow) * amp
       let rot = Math.sin(t / 1200) * 0.8
+      let rotCy = 220
+      let tx = 0
+      let face = 1
+      let flip = 0
+      let sxb = 1
+      let headAdd = 0
+      let gazeX = 0
+      let fL = { dx: 0, dy: 0 }
+      let fR = { dx: 0, dy: 0 }
+      const hL = { dx: Math.sin(t / 700) * 1.2, dy: Math.sin(t / 430) * 2.4 }
+      const hR = { dx: -Math.sin(t / 640) * 1.2, dy: Math.sin(t / 430 + 1.7) * 2.4 }
       if (extra.shake) {
         ty += Math.sin(t / 45) * 2
         rot += Math.sin(t / 40) * 2
@@ -466,17 +638,319 @@ export function Character({ mood }: CharacterProps) {
       if (extra.float) ty = Math.sin(t / 500) * 8
       if (extra.laugh) ty = Math.abs(Math.sin(t / 120)) * -5
       if (extra.deepZ) rot = Math.sin(t / 1600) * 2.5
-      bobG.style.transformOrigin = '160px 278px'
-      bobG.setAttribute('transform', `translate(0 ${ty}) rotate(${rot} 160 220)`)
 
-      let tilt = extra.tilt || 0
+      // ---- move animations (poses computed facing right; mirroring handles left) ----
+      const A = extra.anim
+      if (A === 'walk' || A === 'run' || A === 'moon') {
+        const T = A === 'run' ? 4600 : A === 'moon' ? 11000 : 9000
+        const AMP = 64
+        const w = (2 * Math.PI * t) / T
+        const c = Math.cos(w)
+        tx = AMP * Math.sin(w)
+        const cad = Math.abs(c)
+        face = (c >= 0 ? 1 : -1) * (A === 'moon' ? -1 : 1)
+        extra.ph = (extra.ph || 0) + dt * (A === 'run' ? 0.021 : A === 'moon' ? 0.009 : 0.013) * Math.max(cad, 0.12)
+        const ph = extra.ph
+        if (A === 'moon') {
+          rot = -4
+          ty = Math.sin(t / 500) * 1
+          const sl = Math.sin(ph)
+          fL = { dx: 6 + sl * 6, dy: -Math.max(0, Math.sin(ph + 2.2)) * 2.5 }
+          fR = { dx: 6 - sl * 6, dy: -Math.max(0, Math.sin(ph + 2.2 + Math.PI)) * 2.5 }
+          hL.dx += sl * 3
+          hR.dx += -sl * 3
+          hL.dy -= 2
+          hR.dy -= 2
+        } else {
+          const B = A === 'run' ? 6.5 : 4
+          const L = 12
+          const S = A === 'run' ? 12 : 11
+          ty = -Math.abs(Math.sin(ph)) * B * Math.max(cad, 0.15)
+          rot = (A === 'run' ? 6 : 3.5) * cad + Math.sin(ph) * 1.2
+          fL = { dx: Math.sin(ph) * S, dy: -Math.max(0, Math.sin(ph)) * L * Math.max(cad, 0.2) }
+          fR = { dx: Math.sin(ph + Math.PI) * S, dy: -Math.max(0, Math.sin(ph + Math.PI)) * L * Math.max(cad, 0.2) }
+          const hs = A === 'run' ? 8 : 5
+          hL.dx += -Math.sin(ph) * hs
+          hL.dy += -Math.max(0, Math.sin(ph + Math.PI)) * 3
+          hR.dx += Math.sin(ph) * hs
+          hR.dy += -Math.max(0, Math.sin(ph)) * 3
+        }
+        if (A === 'run') {
+          const streaks = svg?.querySelectorAll<SVGRectElement>('#streaks rect')
+          streaks?.forEach((r, i) => {
+            r.setAttribute('x', String(160 + tx - face * (58 + i * 16) - 13))
+            r.setAttribute('y', String(152 + i * 28 + ty))
+            r.setAttribute('opacity', Math.max(0, cad * 0.55 - i * 0.1).toFixed(2))
+          })
+        }
+      }
+      if (A === 'jump') {
+        const p = (t % 1600) / 1600
+        rot = 0
+        let plant = false
+        if (p < 0.16) {
+          ty = kf(p, [
+            [0, 0],
+            [0.16, 14],
+          ])
+          plant = true
+        } else if (p < 0.74) {
+          const q = (p - 0.16) / 0.58
+          ty = 14 - 86 * Math.sin(Math.PI * q)
+        } else if (p < 0.9) {
+          ty = kf(p, [
+            [0.74, 14],
+            [0.9, 0],
+          ])
+          plant = true
+        } else {
+          ty = 0
+        }
+        if (plant) {
+          fL = { dx: 0, dy: -ty }
+          fR = fL
+          hL.dy += 8
+          hR.dy += 8
+          hL.dx -= 3
+          hR.dx += 3
+        } else {
+          const tk = -(Math.max(0, -ty) / 70) * 10
+          fL = { dx: 0, dy: tk }
+          fR = fL
+          const a = Math.max(0, -ty) / 70
+          hL.dy += -a * 15
+          hR.dy += -a * 15
+          hL.dx -= a * 5
+          hR.dx += a * 5
+        }
+      }
+      if (A === 'flip') {
+        const p = (t % 2400) / 2400
+        const dir = extra.dir || 1
+        rot = 0
+        if (p < 0.08) {
+          ty = kf(p, [
+            [0, 0],
+            [0.08, 2],
+          ])
+          fL = { dx: 0, dy: -ty }
+          fR = fL
+        } else if (p < 0.26) {
+          ty = kf(p, [
+            [0.08, 2],
+            [0.26, 18],
+          ])
+          fL = { dx: 0, dy: -ty }
+          fR = fL
+        } else if (p < 0.72) {
+          const q = (p - 0.26) / 0.46
+          ty = 18 - 104 * Math.sin(Math.PI * q)
+          flip = dir * 360 * (q * q * (3 - 2 * q))
+          const tk = -12 * Math.sin(Math.PI * q)
+          fL = { dx: 0, dy: tk }
+          fR = fL
+        } else if (p < 0.84) {
+          ty = kf(p, [
+            [0.72, 18],
+            [0.84, 2],
+          ])
+          fL = { dx: 0, dy: -ty }
+          fR = fL
+        } else {
+          ty = kf(p, [
+            [0.84, 2],
+            [1, 0],
+          ])
+          fL = { dx: 0, dy: -ty }
+          fR = fL
+        }
+        if (flip) {
+          hL.dx += 12
+          hR.dx += -12
+          hL.dy -= 4
+          hR.dy -= 4
+        } else {
+          hL.dy += 6
+          hR.dy += 6
+        }
+      }
+      if (A === 'spinP') {
+        const th = t / 240
+        sxb = Math.cos(th)
+        ty = -Math.abs(Math.sin(th)) * 3 - 2
+        rot = 0
+        fL = { dx: 0, dy: -3 }
+        fR = { dx: 0, dy: -3 }
+        hL.dx -= 5
+        hR.dx += 5
+        hL.dy -= 9
+        hR.dy -= 9
+      }
+      if (A === 'wiggle') {
+        const w = Math.sin(t / 95)
+        rot = w * 7
+        rotCy = 252
+        ty = -Math.abs(w) * 1.5
+        headAdd = -w * 5
+        hL.dy -= 5
+        hR.dy -= 5
+        hL.dx -= w * 2
+        hR.dx -= w * 2
+      }
+      if (A === 'stretch') {
+        const p = (t % 4200) / 4200
+        rotCy = 258
+        rot = kf(p, [
+          [0, 0],
+          [0.3, -11],
+          [0.5, -11],
+          [0.68, 7],
+          [0.8, 7],
+          [1, 0],
+        ])
+        ty = kf(p, [
+          [0, 0],
+          [0.3, -3],
+          [0.5, -3],
+          [0.68, 5],
+          [0.8, 5],
+          [1, 0],
+        ])
+        headAdd = kf(p, [
+          [0, 0],
+          [0.3, -6],
+          [0.5, -6],
+          [0.68, 5],
+          [0.8, 5],
+          [1, 0],
+        ])
+        const y2 = svg?.querySelector<SVGEllipseElement>('#yawnS')
+        if (y2) {
+          const o = kf(p, [
+            [0, 0],
+            [0.22, 1],
+            [0.5, 1],
+            [0.6, 0],
+          ])
+          y2.setAttribute('opacity', o.toFixed(2))
+          y2.setAttribute('ry', String(3 + o * 5))
+          y2.setAttribute('rx', String(3 + o * 2))
+        }
+        const hup = kf(p, [
+          [0, 0],
+          [0.3, -26],
+          [0.5, -26],
+          [0.68, 12],
+          [0.8, 12],
+          [1, 0],
+        ])
+        const hout = kf(p, [
+          [0, 0],
+          [0.3, -4],
+          [0.5, -4],
+          [0.7, 0],
+          [1, 0],
+        ])
+        hL.dy += hup
+        hR.dy += hup
+        hL.dx += hout
+        hR.dx -= hout
+      }
+      if (A === 'look') {
+        const p = (t % 5600) / 5600
+        gazeX = kf(p, [
+          [0, 0],
+          [0.12, -8],
+          [0.38, -8],
+          [0.5, 8],
+          [0.78, 8],
+          [0.9, 0],
+          [1, 0],
+        ])
+        headAdd = gazeX * 0.7
+      }
+      if (A === 'sit') {
+        const p = Math.min(1, t / 650)
+        const e = p * p * (3 - 2 * p)
+        const drop = 26 * e
+        ty = drop + (p >= 1 ? Math.sin(t / 850) * 1.2 : 0)
+        rot = Math.sin(t / 1400) * 0.5
+        rotCy = 250
+        fL = { dx: -14 * e, dy: -drop }
+        fR = { dx: 14 * e, dy: -drop }
+        hL.dy += 15 * e
+        hR.dy += 15 * e
+        hL.dx -= 3 * e
+        hR.dx += 3 * e
+      }
+      if (A === 'wave') {
+        hR.dx += Math.sin(t / 170) * 8
+        hR.dy += -36 + Math.abs(Math.sin(t / 170)) * 2
+        rot = Math.sin(t / 170) * 1
+      }
+      if (extra.dance) {
+        const dw = Math.sin(t / 220)
+        hL.dy += dw * 9 - 3
+        hR.dy += -dw * 9 - 3
+        hL.dx -= 3
+        hR.dx += 3
+      }
+      if (currentMood === 'excited') {
+        const eb = Math.sin(t / 160) * 3
+        hL.dy += -9 + eb
+        hR.dy += -9 - eb
+        hL.dx -= 4
+        hR.dx += 4
+      }
+
+      // ---- landing detection -> dust puff at the feet ----
+      const air = Math.max(0, -ty)
+      lastAir = Math.max(lastAir, air)
+      if (air < 2) {
+        if (lastAir > 30) dust(160 + tx)
+        lastAir = 0
+      }
+      dusts.forEach((d) => {
+        d.life -= dt / 450
+        const cx = parseFloat(d.el.getAttribute('cx') ?? '0') + d.vx
+        const cy = parseFloat(d.el.getAttribute('cy') ?? '0') + d.vy
+        d.el.setAttribute('cx', String(cx))
+        d.el.setAttribute('cy', String(cy))
+        d.el.setAttribute('opacity', Math.max(0, d.life * 0.6).toFixed(2))
+      })
+      dusts = dusts.filter((d) => {
+        if (d.life <= 0) {
+          d.el.remove()
+          return false
+        }
+        return true
+      })
+
+      // ---- apply transforms ----
+      rootG.setAttribute('transform', face < 0 ? `translate(${tx} 0) translate(320 0) scale(-1 1)` : `translate(${tx} 0)`)
+      let bt = `translate(0 ${ty})`
+      if (flip) bt += ` rotate(${flip % 360} 160 168)`
+      else if (rot) bt += ` rotate(${rot} 160 ${rotCy})`
+      if (sxb !== 1) bt += ` translate(160 0) scale(${sxb} 1) translate(-160 0)`
+      bobG.setAttribute('transform', bt)
+      setLeg(legL, footLa, footLb, 144, 208, 128, 256, fL.dx, fL.dy, 1)
+      setLeg(legR, footRa, footRb, 176, 208, 192, 256, fR.dx, fR.dy, -1)
+      handL.setAttribute('transform', `translate(${hL.dx.toFixed(2)} ${hL.dy.toFixed(2)})`)
+      handR.setAttribute('transform', `translate(${hR.dx.toFixed(2)} ${hR.dy.toFixed(2)})`)
+      const ss = 1 - Math.min(air, 120) / 170
+      shadow.setAttribute('transform', `translate(160 278) scale(${ss.toFixed(3)} ${(0.5 + 0.5 * ss).toFixed(3)}) translate(-160 -278)`)
+      shadow.setAttribute('opacity', (0.12 * (0.35 + 0.65 * ss)).toFixed(3))
+
+      let tilt = (extra.tilt || 0) + headAdd
       if (extra.wobble) tilt += Math.sin(t / 500) * 3
       if (extra.deepZ) tilt += Math.sin(t / 1600) * 2
       if (extra.spin) {
         headG.setAttribute('transform', `rotate(${(t / 12) % 360} 160 116)`)
-      } else if (tilt) {
-        headG.setAttribute('transform', `rotate(${tilt} 160 116)`)
+      } else {
+        headG.setAttribute('transform', tilt ? `rotate(${tilt} 160 116)` : '')
       }
+      const gaze = svg?.querySelector<SVGGElement>('#gaze')
+      if (gaze) gaze.setAttribute('transform', `translate(${gazeX} 0)`)
 
       if (extra.pulse) {
         const p = 1 + Math.sin(t / extra.pulse) * 0.13
@@ -626,25 +1100,31 @@ export function Character({ mood }: CharacterProps) {
         lightL.setAttribute('opacity', String(o))
         lightR.setAttribute('opacity', String(o))
       }
+    }
 
+    function loop(now: number) {
+      const dt = Math.min(50, now - last)
+      last = now
+      renderFrame(dt)
       rafId = requestAnimationFrame(loop)
     }
 
-    setMood(mood)
+    // Genuinely neutral default before anything external calls Byte.set()
+    // (design doc §1c "never invent a mood") -- App.tsx's mount effect
+    // immediately calls Byte.set('wave'), so this is only ever visible for
+    // a single frame at most.
+    setMood('neutral')
     rafId = requestAnimationFrame(loop)
 
     return () => {
       cancelAnimationFrame(rafId)
-      applyMoodRef.current = null
+      delete window.Byte
     }
-    // Mount-once: `mood` changes are applied via the effect below through
-    // applyMoodRef, not by re-running this whole setup.
+    // Mount-once: this is the entire lifecycle of the component now that
+    // there's no `mood` prop to react to -- everything is driven externally
+    // via window.Byte.set().
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
-
-  useEffect(() => {
-    applyMoodRef.current?.(mood)
-  }, [mood])
 
   return (
     <svg
@@ -657,38 +1137,48 @@ export function Character({ mood }: CharacterProps) {
       style={{ width: 'min(85vw, 480px)', height: 'auto', maxHeight: '78vh' }}
     >
       <title>Byte</title>
-      <desc>A dark navy robot whose glowing screen eyes and effects change across many EMO-style moods.</desc>
+      <desc>A dark navy robot with floaty hands who can walk, run, jump, flip, spin, moonwalk, wave and more, with glowing screen eyes and effects across many EMO-style moods.</desc>
 
       <g id="fx" />
-      <g id="bobG">
-        <ellipse cx={160} cy={278} rx={66} ry={7} fill="#000000" opacity={0.12} />
+      <g id="rootG">
+        <ellipse id="shadow" cx={160} cy={278} rx={66} ry={7} fill="#000000" opacity={0.12} />
+        <g id="bobG">
+          <g id="footL">
+            <path id="legL" d="M144 208 L134 250" stroke="#2C3350" strokeWidth={25} strokeLinecap="round" fill="none" />
+            <ellipse id="footLa" cx={128} cy={256} rx={28} ry={21} fill="#2C3350" />
+            <ellipse id="footLb" cx={128} cy={256} rx={28} ry={21} fill="none" stroke="#3A4470" strokeWidth={3} />
+          </g>
+          <g id="footR">
+            <path id="legR" d="M176 208 L186 250" stroke="#2C3350" strokeWidth={25} strokeLinecap="round" fill="none" />
+            <ellipse id="footRa" cx={192} cy={256} rx={28} ry={21} fill="#2C3350" />
+            <ellipse id="footRb" cx={192} cy={256} rx={28} ry={21} fill="none" stroke="#3A4470" strokeWidth={3} />
+          </g>
 
-        <g id="footL">
-          <path d="M144 208 L134 250" stroke="#2C3350" strokeWidth={25} strokeLinecap="round" fill="none" />
-          <ellipse cx={128} cy={256} rx={28} ry={21} fill="#2C3350" />
-          <ellipse cx={128} cy={256} rx={28} ry={21} fill="none" stroke="#3A4470" strokeWidth={3} />
-        </g>
-        <g id="footR">
-          <path d="M176 208 L186 250" stroke="#2C3350" strokeWidth={25} strokeLinecap="round" fill="none" />
-          <ellipse cx={192} cy={256} rx={28} ry={21} fill="#2C3350" />
-          <ellipse cx={192} cy={256} rx={28} ry={21} fill="none" stroke="#3A4470" strokeWidth={3} />
-        </g>
+          <rect x={120} y={146} width={80} height={66} rx={22} fill="#23273A" />
+          <rect x={140} y={162} width={40} height={26} rx={8} fill="#171A28" />
+          <circle id="lightL" cx={152} cy={175} r={3.5} fill="#3FE0D0" />
+          <circle id="lightR" cx={168} cy={175} r={3.5} fill="#3FE0D0" />
 
-        <rect x={120} y={146} width={80} height={66} rx={22} fill="#23273A" />
-        <rect x={140} y={162} width={40} height={26} rx={8} fill="#171A28" />
-        <circle id="lightL" cx={152} cy={175} r={3.5} fill="#3FE0D0" />
-        <circle id="lightR" cx={168} cy={175} r={3.5} fill="#3FE0D0" />
+          <g id="headG">
+            <rect x={88} y={64} width={144} height={108} rx={32} fill="#1B1E2C" />
+            <rect x={88} y={64} width={144} height={108} rx={32} fill="none" stroke="#3A4470" strokeWidth={5} />
+            <circle cx={82} cy={116} r={16} fill="#2C3350" />
+            <circle cx={82} cy={116} r={16} fill="none" stroke="#3A4470" strokeWidth={3} />
+            <circle cx={238} cy={116} r={16} fill="#2C3350" />
+            <circle cx={238} cy={116} r={16} fill="none" stroke="#3A4470" strokeWidth={3} />
+            <rect x={104} y={86} width={112} height={64} rx={16} fill="#0A0C14" />
+            <g id="screen" />
+            <g id="topFx" />
+          </g>
 
-        <g id="headG">
-          <rect x={88} y={64} width={144} height={108} rx={32} fill="#1B1E2C" />
-          <rect x={88} y={64} width={144} height={108} rx={32} fill="none" stroke="#3A4470" strokeWidth={5} />
-          <circle cx={82} cy={116} r={16} fill="#2C3350" />
-          <circle cx={82} cy={116} r={16} fill="none" stroke="#3A4470" strokeWidth={3} />
-          <circle cx={238} cy={116} r={16} fill="#2C3350" />
-          <circle cx={238} cy={116} r={16} fill="none" stroke="#3A4470" strokeWidth={3} />
-          <rect x={104} y={86} width={112} height={64} rx={16} fill="#0A0C14" />
-          <g id="screen" />
-          <g id="topFx" />
+          <g id="handL">
+            <ellipse cx={100} cy={196} rx={13} ry={15} fill="#2C3350" />
+            <ellipse cx={100} cy={196} rx={13} ry={15} fill="none" stroke="#3A4470" strokeWidth={3} />
+          </g>
+          <g id="handR">
+            <ellipse cx={220} cy={196} rx={13} ry={15} fill="#2C3350" />
+            <ellipse cx={220} cy={196} rx={13} ry={15} fill="none" stroke="#3A4470" strokeWidth={3} />
+          </g>
         </g>
       </g>
     </svg>

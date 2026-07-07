@@ -37,6 +37,18 @@ export type Mood =
   | 'halloween'
   | 'newyear'
   | 'valentine'
+  | 'walk'
+  | 'run'
+  | 'jump'
+  | 'flip'
+  | 'backflip'
+  | 'spin'
+  | 'moonwalk'
+  | 'wiggle'
+  | 'stretch'
+  | 'wave'
+  | 'lookaround'
+  | 'sit'
 
 export interface ChatMessage {
   role: 'user' | 'assistant'

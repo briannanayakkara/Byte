@@ -47,6 +47,18 @@ const VALID_MOODS: Mood[] = [
   'halloween',
   'newyear',
   'valentine',
+  'walk',
+  'run',
+  'jump',
+  'flip',
+  'backflip',
+  'spin',
+  'moonwalk',
+  'wiggle',
+  'stretch',
+  'wave',
+  'lookaround',
+  'sit',
 ]
 
 interface ApiRequest {
