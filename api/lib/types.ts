@@ -96,6 +96,8 @@ export interface CharacterState {
   last_seen_at: string | null
   streak_days: number
   personality_notes: string | null
+  last_cold_at: string | null
+  milestones: string[]
 }
 
 export interface ImportantDate {

@@ -2,7 +2,7 @@
 // Write-back (append messages, update character_state, upsert new_facts) is
 // step 8 -- not implemented here.
 import { supabase } from './supabase.js'
-import type { CharacterState, Fact, ImportantDate, Message, User } from './types.js'
+import type { CharacterState, ChatMessage, Fact, ImportantDate, Message, User } from './types.js'
 
 // Freshly-seeded users have no character_state row yet (commands/seed-data.md
 // deliberately doesn't seed one -- it's created on a real write, step 8).
@@ -15,6 +15,8 @@ const DEFAULT_CHARACTER_STATE: Omit<CharacterState, 'id' | 'user_id'> = {
   last_seen_at: null,
   streak_days: 0,
   personality_notes: null,
+  last_cold_at: null,
+  milestones: [],
 }
 
 export interface MemorySnapshot {
@@ -60,4 +62,11 @@ export async function loadMemory(userId: string): Promise<MemorySnapshot> {
     state: (stateRes.data as CharacterState | null) ?? DEFAULT_CHARACTER_STATE,
     dates: (datesRes.data ?? []) as ImportantDate[],
   }
+}
+
+// Maps DB-persisted messages to the shape callLLM expects. Used by chat.ts to
+// source conversation history from Supabase (durable, cross-device) instead
+// of the browser's own transient state (see Task 6's plan notes).
+export function toChatHistory(messages: Message[]): ChatMessage[] {
+  return messages.map((m) => ({ role: m.role, content: m.content }))
 }

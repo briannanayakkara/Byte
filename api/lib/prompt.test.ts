@@ -15,6 +15,8 @@ const BASE_MEMORY: MemorySnapshot = {
     last_seen_at: '2026-07-01T00:00:00.000Z',
     streak_days: 3,
     personality_notes: null,
+    last_cold_at: null,
+    milestones: [],
   },
 }
 
