@@ -21,6 +21,7 @@
 - Code style: `.claude/skills/code-style` -- function components only, no `any` without a comment, Tailwind utility classes only, `oxlint` not ESLint, no semicolons (match this codebase's existing style -- see any current file).
 - All new/modified relative imports in `api/**` use explicit `.js` extensions (e.g. `from './relationship.js'`) even though the source files are `.ts` -- required by this project's `nodenext` module resolution (`tsconfig.node.json`). This is already the existing convention; just don't break it in new files.
 - Type-only imports must use `import type { ... }` -- `verbatimModuleSyntax` is on in both tsconfigs and `tsc -b` will error otherwise.
+- Per `.claude/skills/testing-patterns` (this repo's documented testing approach): **do not unit-test SVG/DOM rendering** -- it's explicitly called out as better verified visually (same reasoning the project already applied to R3F/Three.js rendering). This deliberately applies to Task 3 (`Character.tsx`) and Task 4 (`MoodBubble.tsx`): both are verified via the manual steps in their own tasks, not Vitest. Vitest (added in Task 5) is for the plan's pure logic only -- `computeEnergy`, `getHolidayToday`/`isBirthdayToday`, and the prompt-string builders in `api/lib/prompt.ts`.
 
 ---
 
