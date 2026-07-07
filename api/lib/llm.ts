@@ -37,8 +37,9 @@ const RESPONSE_SCHEMA = {
         required: ['content', 'category'],
       },
     },
+    personality_notes: { type: 'string' },
   },
-  required: ['reply', 'mood', 'new_facts'],
+  required: ['reply', 'mood', 'new_facts', 'personality_notes'],
 }
 
 export async function callLLM(systemPrompt: string, messages: ChatMessage[]): Promise<string> {
