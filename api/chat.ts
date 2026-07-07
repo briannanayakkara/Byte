@@ -6,7 +6,7 @@
 import type { Mood } from './lib/types.js'
 import { loadMemory, resolveUserId } from './lib/memory.js'
 import { saveTurn } from './lib/memory-write.js'
-import { buildMemoryBlock } from './lib/prompt.js'
+import { buildGreetingInstruction, buildMemoryBlock } from './lib/prompt.js'
 
 const VALID_MOODS: Mood[] = ['happy', 'curious', 'sleepy', 'excited', 'confused', 'neutral', 'lovestruck']
 
@@ -115,7 +115,8 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     return
   }
 
-  const body = (req.body ?? {}) as { message?: unknown; history?: unknown }
+  const body = (req.body ?? {}) as { message?: unknown; history?: unknown; greeting?: unknown }
+  const isGreeting = body.greeting === true
   const message = typeof body.message === 'string' ? body.message.trim() : ''
   const history: ChatMessage[] = Array.isArray(body.history)
     ? body.history.filter(
@@ -127,7 +128,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       )
     : []
 
-  if (!message) {
+  if (!isGreeting && !message) {
     res.status(400).json({ error: 'message is required' })
     return
   }
@@ -136,21 +137,30 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     const query = new URL(req.url ?? '', 'http://localhost').searchParams
     const userId = resolveUserId(query)
     const memory = await loadMemory(userId)
-    const systemPrompt = `${SYSTEM_PROMPT}\n\n${buildMemoryBlock(memory)}`
+    const systemPrompt = isGreeting
+      ? `${SYSTEM_PROMPT}\n\n${buildMemoryBlock(memory)}\n\n${buildGreetingInstruction()}`
+      : `${SYSTEM_PROMPT}\n\n${buildMemoryBlock(memory)}`
 
-    const rawText = await callGemini(message, history, systemPrompt)
+    // Greeting mode (spec §5c "Greeting on return"): no user message exists
+    // yet, so there's nothing to save back -- read-only, unlike a real turn.
+    const rawText = isGreeting
+      ? await callGemini('(the app just opened -- say hello, no user message yet)', [], systemPrompt)
+      : await callGemini(message, history, systemPrompt)
     const { reply, mood, newFacts } = parseModelOutput(rawText)
 
-    try {
-      await saveTurn(userId, memory.state, { userMessage: message, reply, mood, newFacts })
-    } catch (writeError) {
-      // Best-effort (spec §9 step 8 / api-docs endpoints.md): a write
-      // failure must not turn a successful reply into a 500 for the user.
-      console.error('memory write failed', writeError)
+    if (!isGreeting) {
+      try {
+        await saveTurn(userId, memory.state, { userMessage: message, reply, mood, newFacts })
+      } catch (writeError) {
+        // Best-effort (spec §9 step 8 / api-docs endpoints.md): a write
+        // failure must not turn a successful reply into a 500 for the user.
+        console.error('memory write failed', writeError)
+      }
     }
 
     res.status(200).json({ reply, mood })
-  } catch {
+  } catch (err) {
+    console.error('chat request failed', err)
     // Never leak stack traces or key names in the error body (spec's own
     // security posture) -- the browser's fallback is the in-character
     // "confused" line from spec §8, not this message.

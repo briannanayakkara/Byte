@@ -52,6 +52,7 @@ export function buildMemoryBlock(memory: MemorySnapshot): string {
 - Name: ${user.name} (nicknames you use: ${nicknames})
 - Relationship level: ${level.name} -- ${level.description}
 - ${history}
+- Current streak: ${state.streak_days} day${state.streak_days === 1 ? '' : 's'} in a row
 - Things you know about them:
 ${formatFacts(facts)}
 - Upcoming dates to be aware of: ${formatDates(dates)}
@@ -60,11 +61,27 @@ ${formatFacts(facts)}
 
 Use this naturally -- reference it the way someone who cares would, without
 listing it back like a database. Don't recite facts robotically. If it's
-been a while since you last talked, react to that. If a special date is
-near, bring it up sweetly.
+been a while since you last talked, react to that. If the streak is 2+
+days, feel free to celebrate it a little (not every single message).
+If a special date is near, bring it up sweetly.
 
 At the very end of your JSON, also include a "new_facts" array of any NEW,
 lasting things you learned about them this message (empty array if none).
 So the full shape is:
 { "reply": "...", "mood": "...", "new_facts": ["..."] }`
+}
+
+// Step 9 (spec §5c "Greeting on return"): a proactive greeting sent when the
+// app loads, before the user has typed anything. Appended after the regular
+// memory block, which already carries the "last seen"/streak context above.
+export function buildGreetingInstruction(): string {
+  return `The person just opened the app -- they haven't said anything yet.
+Write a short, warm, in-character GREETING (not a reply to a message) that
+reacts naturally to how long it's been since you last talked and, if the
+streak is 2+ days, celebrates it briefly. One line, no question you're
+answering.
+
+Respond with ONLY the same JSON shape as always, "new_facts" empty since
+nothing new was learned:
+{ "reply": "<your greeting>", "mood": "<mood>", "new_facts": [] }`
 }

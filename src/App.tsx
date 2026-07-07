@@ -1,8 +1,8 @@
-import { Suspense, useState } from 'react'
+import { Suspense, useEffect, useState } from 'react'
 import { Canvas } from '@react-three/fiber'
 import { ChatInput } from './components/ChatInput'
 import { SpeechBubble } from './components/SpeechBubble'
-import { sendChatMessage } from './lib/chatApi'
+import { fetchGreeting, sendChatMessage } from './lib/chatApi'
 import { CharacterModel } from './scene/CharacterModel'
 import { CHARACTERS, DEFAULT_CHARACTER_ID } from './scene/characters'
 import type { ChatMessage, Mood } from './types'
@@ -17,6 +17,20 @@ function App() {
   const [characterId, setCharacterId] = useState(DEFAULT_CHARACTER_ID)
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [isSending, setIsSending] = useState(false)
+  // Spec §5c "Greeting on return" -- kept separate from `messages` so it
+  // never gets sent back to Gemini as fake conversation history.
+  const [greeting, setGreeting] = useState<string | null>(null)
+
+  useEffect(() => {
+    fetchGreeting()
+      .then(({ reply, mood: greetingMood }) => {
+        setGreeting(reply)
+        setMood(greetingMood)
+      })
+      .catch(() => {
+        // Non-critical: no greeting, no mood change -- just no bubble yet.
+      })
+  }, [])
 
   async function handleSend(text: string) {
     const history = messages
@@ -34,7 +48,7 @@ function App() {
     }
   }
 
-  const latestMessage = messages.at(-1)
+  const bubbleText = messages.at(-1)?.content ?? greeting
 
   return (
     <div className="relative h-svh w-svw bg-gradient-to-b from-slate-900 to-slate-800 text-white">
@@ -46,7 +60,7 @@ function App() {
         </Suspense>
       </Canvas>
 
-      {latestMessage && <SpeechBubble text={latestMessage.content} />}
+      {bubbleText && <SpeechBubble text={bubbleText} />}
 
       <div className="absolute inset-x-0 bottom-4 flex flex-col items-center gap-3 px-4">
         <ChatInput onSend={handleSend} disabled={isSending} />
