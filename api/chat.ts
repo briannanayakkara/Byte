@@ -5,7 +5,7 @@
 // and with the local Vite dev middleware in vite.config.ts.
 import type { ChatMessage, Mood } from './lib/types.js'
 import { loadMemory, resolveUserId } from './lib/memory.js'
-import { saveTurn } from './lib/memory-write.js'
+import { saveGreeting, saveTurn } from './lib/memory-write.js'
 import { callLLM } from './lib/llm.js'
 import { buildGreetingInstruction, buildMemoryBlock, buildSpecialDayLine } from './lib/prompt.js'
 import { computeEnergy } from './lib/relationship.js'
@@ -209,7 +209,11 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       : `${SYSTEM_PROMPT}\n\n${buildMemoryBlock(promptMemory)}${specialDayLine}`
 
     // Greeting mode (spec §5c "Greeting on return"): no user message exists
-    // yet, so there's nothing to save back -- read-only, unlike a real turn.
+    // yet, so there's no conversational turn to save -- but the resulting
+    // mood/energy DO get saved (below, via saveGreeting), so Byte's state
+    // stays continuous across devices instead of being thrown away
+    // (design doc docs/superpowers/specs/2026-07-07-byte-v3-character-and-continuity-design.md
+    // §3).
     const messages: ChatMessage[] = isGreeting
       ? [{ role: 'user', content: '(the app just opened -- say hello, no user message yet)' }]
       : [...history, { role: 'user', content: message }]
@@ -223,7 +227,13 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     // deterministically rather than leaving it to chance.
     const reply = isGreeting ? ensureNameMentioned(parsed.reply, memory.user.name) : parsed.reply
 
-    if (!isGreeting) {
+    if (isGreeting) {
+      try {
+        await saveGreeting(userId, mood, promptMemory.state.energy)
+      } catch (writeError) {
+        console.error('greeting memory write failed', writeError)
+      }
+    } else {
       try {
         await saveTurn(userId, memory.state, { userMessage: message, reply, mood, newFacts })
       } catch (writeError) {
