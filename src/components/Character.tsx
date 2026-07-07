@@ -408,7 +408,7 @@ export function Character({ mood }: CharacterProps) {
       },
       newyear() {
         screen.append(star(exL, cyL, 12), star(exR, cyL, 12))
-        topFx.append(txt(160, 76, 15, '2026!', GOLD))
+        topFx.append(txt(160, 76, 15, `${new Date().getUTCFullYear()}!`, GOLD))
         extra.confetti = true
         extra.pulse = 180
       },

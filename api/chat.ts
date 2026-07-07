@@ -8,6 +8,7 @@ import { loadMemory, resolveUserId } from './lib/memory.js'
 import { saveTurn } from './lib/memory-write.js'
 import { callLLM } from './lib/llm.js'
 import { buildGreetingInstruction, buildMemoryBlock, buildSpecialDayLine } from './lib/prompt.js'
+import { computeEnergy } from './lib/relationship.js'
 
 // The 32 moods the LLM is allowed to pick (design doc §6a) -- `listening`
 // and `talking` are excluded because there's no voice/TTS feature yet to
@@ -170,10 +171,22 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     const query = new URL(req.url ?? '', 'http://localhost').searchParams
     const userId = resolveUserId(query)
     const memory = await loadMemory(userId)
+    // Final-review finding: buildMemoryBlock must see the energy value this
+    // turn will actually act on (already decayed for time elapsed since
+    // last_seen_at), not the stale raw value stored at the end of the last
+    // session -- otherwise a long-absent return reads as full-energy on the
+    // first message back and the sick/low-energy arc only shows up starting
+    // the second message, one turn later than the design intends. Building
+    // a new object here (not mutating memory.state) so saveTurn below still
+    // receives the original raw priorState -- it independently recomputes
+    // the identical value from the same unmodified inputs for storage, so
+    // this change doesn't affect what gets persisted, only what the LLM
+    // sees when describing its current state for this reply.
+    const promptMemory = { ...memory, state: { ...memory.state, energy: computeEnergy(memory.state.last_seen_at, memory.state.energy) } }
     const specialDayLine = buildSpecialDayLine(memory.user.name, memory.user.birthday)
     const systemPrompt = isGreeting
-      ? `${SYSTEM_PROMPT}\n\n${buildMemoryBlock(memory)}${specialDayLine}\n\n${buildGreetingInstruction()}`
-      : `${SYSTEM_PROMPT}\n\n${buildMemoryBlock(memory)}${specialDayLine}`
+      ? `${SYSTEM_PROMPT}\n\n${buildMemoryBlock(promptMemory)}${specialDayLine}\n\n${buildGreetingInstruction()}`
+      : `${SYSTEM_PROMPT}\n\n${buildMemoryBlock(promptMemory)}${specialDayLine}`
 
     // Greeting mode (spec §5c "Greeting on return"): no user message exists
     // yet, so there's nothing to save back -- read-only, unlike a real turn.
