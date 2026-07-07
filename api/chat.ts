@@ -3,7 +3,8 @@
 // Minimal request/response typing instead of a @vercel/node dependency:
 // structurally compatible with VercelRequest/VercelResponse in production,
 // and with the local Vite dev middleware in vite.config.ts.
-import type { ChatMessage, Mood } from './lib/types.js'
+import type { ChatMessage, FactCategory, Mood } from './lib/types.js'
+import { FACT_CATEGORIES } from './lib/types.js'
 import { loadMemory, resolveUserId, toChatHistory } from './lib/memory.js'
 import { saveGreeting, saveTurn } from './lib/memory-write.js'
 import { callLLM } from './lib/llm.js'
@@ -39,15 +40,28 @@ function stripCodeFences(text: string): string {
   return fenced ? fenced[1] : text
 }
 
+interface NewFact {
+  content: string
+  category: FactCategory
+}
+
 function parseModelOutput(
   rawText: string,
   fallbackPersonalityNotes: string | null
-): { reply: string; mood: Mood; newFacts: string[]; personalityNotes: string | null } {
+): { reply: string; mood: Mood; newFacts: NewFact[]; personalityNotes: string | null } {
   try {
     const parsed = JSON.parse(stripCodeFences(rawText).trim())
     const reply = typeof parsed.reply === 'string' ? parsed.reply : null
     const mood = SELECTABLE_MOODS.includes(parsed.mood) ? (parsed.mood as Mood) : 'neutral'
-    const newFacts = Array.isArray(parsed.new_facts) ? parsed.new_facts.filter((f: unknown) => typeof f === 'string') : []
+    const newFacts: NewFact[] = Array.isArray(parsed.new_facts)
+      ? parsed.new_facts
+          .filter((f: unknown): f is { content: unknown; category: unknown } => !!f && typeof f === 'object')
+          .map((f: { content: unknown; category: unknown }) => ({
+            content: f.content,
+            category: FACT_CATEGORIES.includes(f.category as FactCategory) ? f.category : 'other',
+          }))
+          .filter((f: { content: unknown; category: FactCategory }): f is NewFact => typeof f.content === 'string')
+      : []
     const personalityNotes = typeof parsed.personality_notes === 'string' ? parsed.personality_notes : fallbackPersonalityNotes
     if (reply === null) throw new Error('missing reply field')
     return { reply, mood, newFacts, personalityNotes }

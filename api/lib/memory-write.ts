@@ -3,13 +3,13 @@
 // successful LLM reply into a 500 for the browser.
 import { supabase } from './supabase.js'
 import { canCatchCold, computeEnergy, computeStreak, newMilestones, relationshipLevel } from './relationship.js'
-import type { CharacterState, Mood } from './types.js'
+import type { CharacterState, FactCategory, Mood } from './types.js'
 
 interface SaveTurnInput {
   userMessage: string
   reply: string
   mood: Mood
-  newFacts: string[]
+  newFacts: { content: string; category: FactCategory }[]
   personalityNotes: string | null
 }
 
@@ -56,14 +56,14 @@ export async function saveTurn(
       p_new_milestones: milestonesToAdd,
       p_personality_notes: personalityNotes ?? priorState.personality_notes ?? '',
     }),
-    ...newFacts.map((content) => upsertFact(userId, content)),
+    ...newFacts.map((f) => upsertFact(userId, f.content, f.category)),
   ])
 }
 
 // Dedup against existing facts by content (spec §5b: "deduped against
 // existing ones") -- bump last_referenced_at on a repeat instead of
 // inserting a duplicate row.
-async function upsertFact(userId: string, content: string): Promise<void> {
+async function upsertFact(userId: string, content: string, category: FactCategory): Promise<void> {
   const { data: existing } = await supabase
     .from('facts')
     .select('id')
@@ -74,7 +74,7 @@ async function upsertFact(userId: string, content: string): Promise<void> {
   if (existing) {
     await supabase.from('facts').update({ last_referenced_at: new Date().toISOString() }).eq('id', existing.id)
   } else {
-    await supabase.from('facts').insert({ user_id: userId, content, category: 'other' })
+    await supabase.from('facts').insert({ user_id: userId, content, category })
   }
 }
 

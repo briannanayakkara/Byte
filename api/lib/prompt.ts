@@ -6,6 +6,7 @@
 import type { MemorySnapshot } from './memory.js'
 import { getHolidayToday, isBirthdayToday } from './holidays.js'
 import { MOOD_GROUPS } from './moods.js'
+import { FACT_CATEGORIES } from './types.js'
 
 const LEVELS = [
   { name: 'New', description: 'a bit shy-goofy, still learning your name and likes -- use their name, not a nickname yet' },
@@ -180,8 +181,7 @@ anyone) when it comes up, not a romantic cue toward them specifically.
 
 "new_facts" is an array of any NEW, lasting things you learned about them
 this message (empty array if none) -- each one an object with "content"
-(the fact itself) and "category" (one of: likes, dislikes, people, events,
-running_joke, person, routine, preference, life_event, other).
+(the fact itself) and "category" (one of: ${FACT_CATEGORIES.join(', ')}).
 
 "personality_notes" is a compact (under ~400 characters) running note of
 shared context: inside jokes, recurring themes, callbacks. Carry the

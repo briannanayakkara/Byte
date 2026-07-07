@@ -6,6 +6,7 @@
 // (and /api/chat as a whole) only runs via the local Vite dev server for
 // now, not a Vercel/Cloudflare deploy.
 import type { ChatMessage } from './types.js'
+import { FACT_CATEGORIES } from './types.js'
 import { SELECTABLE_MOODS } from './moods.js'
 
 interface OllamaResponse {
@@ -25,7 +26,17 @@ const RESPONSE_SCHEMA = {
   properties: {
     reply: { type: 'string' },
     mood: { type: 'string', enum: SELECTABLE_MOODS },
-    new_facts: { type: 'array', items: { type: 'string' } },
+    new_facts: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          content: { type: 'string' },
+          category: { type: 'string', enum: FACT_CATEGORIES },
+        },
+        required: ['content', 'category'],
+      },
+    },
   },
   required: ['reply', 'mood', 'new_facts'],
 }

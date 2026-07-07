@@ -67,11 +67,14 @@ export interface User {
   created_at: string
 }
 
+export const FACT_CATEGORIES = ['likes', 'dislikes', 'people', 'events', 'running_joke', 'person', 'routine', 'preference', 'life_event', 'other'] as const
+export type FactCategory = (typeof FACT_CATEGORIES)[number]
+
 export interface Fact {
   id: string
   user_id: string
   content: string
-  category: 'likes' | 'dislikes' | 'people' | 'events' | 'other'
+  category: FactCategory
   confidence: number | null
   created_at: string
   last_referenced_at: string
