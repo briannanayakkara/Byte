@@ -29,7 +29,8 @@ const THOUGHTS = [
   ['🍌', '❤️'],
 ]
 // Goofy, self-deprecating, PG one-liners in Byte's voice -- no flirting,
-// short, matching the personality tuning in api/chat.ts's SYSTEM_PROMPT.
+// short, matching the personality tuning in personality_base's distilled_prompt
+// (loaded via api/lib/personality.ts, see docs/byte-base-personality.md).
 const IDLE_FACTS = [
   "fun fact: i can technically count to infinity. it just takes a while and i lose interest around forty.",
   "did you know a shrimp's heart is in its head? mine's in my chest. probably. i haven't checked.",
