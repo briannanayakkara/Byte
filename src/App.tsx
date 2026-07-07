@@ -1,9 +1,8 @@
-import { Suspense, useEffect, useState } from 'react'
-import { Canvas } from '@react-three/fiber'
+import { useEffect, useState } from 'react'
+import { Character } from './components/Character'
 import { ChatInput } from './components/ChatInput'
 import { SpeechBubble } from './components/SpeechBubble'
 import { fetchGreeting, sendChatMessage } from './lib/chatApi'
-import { CharacterModel } from './scene/CharacterModel'
 import type { ChatMessage, Mood } from './types'
 
 const MOODS: Mood[] = ['neutral', 'happy', 'curious', 'sleepy', 'excited', 'confused', 'lovestruck']
@@ -50,15 +49,21 @@ function App() {
 
   return (
     <div className="relative h-svh w-svw bg-gradient-to-b from-slate-900 to-slate-800 text-white">
-      <Canvas camera={{ position: [0, 0, 3], fov: 45 }}>
-        <ambientLight intensity={0.7} />
-        <directionalLight position={[2, 3, 2]} intensity={1.4} />
-        <Suspense fallback={null}>
-          <CharacterModel mood={mood} />
-        </Suspense>
-      </Canvas>
+      <Character mood={mood} />
 
       {bubbleText && <SpeechBubble text={bubbleText} />}
+
+      {/* Freepik free-license attribution (required) for the character
+          illustration -- see public/boy-with-different-set-faces-illustration.zip's
+          "License free.txt". */}
+      <a
+        href="http://www.freepik.com"
+        target="_blank"
+        rel="noreferrer"
+        className="absolute bottom-1 right-2 text-[10px] text-white/40 hover:text-white/70"
+      >
+        Designed by brgfx / Freepik
+      </a>
 
       <div className="absolute inset-x-0 bottom-4 flex flex-col items-center gap-3 px-4">
         <ChatInput onSend={handleSend} disabled={isSending} />

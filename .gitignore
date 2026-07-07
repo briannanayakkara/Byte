@@ -17,6 +17,11 @@ dist-ssr
 .env.*
 !.env.example
 
+# Raw purchased/downloaded stock assets -- not for redistribution (license
+# terms), and not served: only the derived public/character/*.png (built by
+# scripts/build-character-assets.mjs) are actually used by the app.
+source-assets
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

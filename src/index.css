@@ -1,1 +1,13 @@
 @import "tailwindcss";
+
+/* Character mood swap (spec §6: transitions ease over ~200-300ms, never
+   snap) -- a plain mount fade-in, since the 2D character is a single <img>
+   swapped by src rather than a blended 3D expression. */
+@keyframes character-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
