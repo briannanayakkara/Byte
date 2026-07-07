@@ -7,7 +7,7 @@ import type { ChatMessage, Mood } from './lib/types.js'
 import { loadMemory, resolveUserId } from './lib/memory.js'
 import { saveGreeting, saveTurn } from './lib/memory-write.js'
 import { callLLM } from './lib/llm.js'
-import { buildGreetingInstruction, buildMemoryBlock, buildSpecialDayLine } from './lib/prompt.js'
+import { buildGreetingInstruction, buildMemoryBlock, buildOutputFormatInstructions, buildSpecialDayLine } from './lib/prompt.js'
 import { computeEnergy } from './lib/relationship.js'
 import { SELECTABLE_MOODS } from './lib/moods.js'
 import { loadActiveBasePersonality } from './lib/personality.js'
@@ -22,46 +22,6 @@ interface ApiResponse {
   status(code: number): ApiResponse
   json(body: unknown): void
 }
-
-// Mechanical output-contract text (JSON shape, mood groups) -- kept local and
-// verbatim here for now. Task 4 relocates this into api/lib/prompt.ts's
-// buildOutputFormatInstructions() (single-sourced from api/lib/moods.ts) and
-// deletes this constant.
-const OUTPUT_FORMAT_INSTRUCTIONS = `If the person explicitly asks you to be or show a mood ("be sleepy," "act
-excited," "dance for me"), honor it as that reply's mood, played along in
-character.
-
-Always respond with ONLY a JSON object, no other text, no code fences:
-{ "reply": "<what you say>", "mood": "<mood>" }
-
-Pick the mood based on what's actually happening in this message and
-reply, not out of habit -- most turns should land on something calmer
-than "excited" (happy, content, curious, neutral are your bread and
-butter); reach for "excited" only when something genuinely exciting just
-happened. Vary your mood across a conversation the way a real reaction
-would; don't default to the same one turn after turn unless the
-conversation is genuinely staying in that same place. Pick from these
-groups:
-- Everyday reactions: happy, excited, content, neutral, curious, confused,
-  sad, surprised, laughing, lovestruck.
-- Your own attitude/quirks: wink, smug, annoyed, grumpy, challenging,
-  pout, bored, proud, dizzy, thinking, scared.
-- Low-energy/health (see your current energy below): sick, unwell,
-  recovering.
-- Situational: dancing, sleepy, dozing -- use when it fits what's
-  literally happening, not as a random pick.
-- Moves (rare flourishes, not a default pick most turns): wave for hello
-  or goodbye moments; flip, backflip, spin, or jump for big excitement or
-  celebration; sit or stretch for a calm or lazy beat; walk, run,
-  moonwalk, wiggle, or lookaround as playful rarities, not
-  every-message material.
-- Special days (only on the actual day, see below): birthday, christmas,
-  halloween, newyear, valentine.
-
-Use "lovestruck" for moments of big, adoring, utterly-smitten affection --
-pet-devotion, not romance. Use "annoyed" for a brief, theatrical huff --
-never anything mean. "valentine" is about love in general (friends, pets,
-anyone) when it comes up, not a romantic cue toward them specifically.`
 
 // Small local models don't reliably follow "always say their name" in a
 // long prompt -- if it's missing, swap a generic greeting-opener for a
@@ -137,8 +97,8 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     // Assembly order per docs/byte-base-personality.md §10: fixed soul, then
     // the evolving memory block, then mechanical output-format instructions.
     const systemPrompt = isGreeting
-      ? `${basePersonality}\n\n${buildMemoryBlock(promptMemory)}${specialDayLine}\n\n${buildGreetingInstruction()}\n\n${OUTPUT_FORMAT_INSTRUCTIONS}`
-      : `${basePersonality}\n\n${buildMemoryBlock(promptMemory)}${specialDayLine}\n\n${OUTPUT_FORMAT_INSTRUCTIONS}`
+      ? `${basePersonality}\n\n${buildMemoryBlock(promptMemory)}${specialDayLine}\n\n${buildGreetingInstruction()}\n\n${buildOutputFormatInstructions()}`
+      : `${basePersonality}\n\n${buildMemoryBlock(promptMemory)}${specialDayLine}\n\n${buildOutputFormatInstructions()}`
 
     // Greeting mode (spec §5c "Greeting on return"): no user message exists
     // yet, so there's no conversational turn to save -- but the resulting

@@ -61,6 +61,8 @@ export interface User {
   nicknames: string[]
   birthday: string | null
   notes: string | null
+  location: string | null
+  pronouns: string | null
   is_test: boolean
   created_at: string
 }
