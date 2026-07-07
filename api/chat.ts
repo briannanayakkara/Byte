@@ -3,17 +3,13 @@
 // Minimal request/response typing instead of a @vercel/node dependency:
 // structurally compatible with VercelRequest/VercelResponse in production,
 // and with the local Vite dev middleware in vite.config.ts.
-import type { Mood } from './lib/types.js'
+import type { ChatMessage, Mood } from './lib/types.js'
 import { loadMemory, resolveUserId } from './lib/memory.js'
 import { saveTurn } from './lib/memory-write.js'
+import { callLLM } from './lib/llm.js'
 import { buildGreetingInstruction, buildMemoryBlock } from './lib/prompt.js'
 
 const VALID_MOODS: Mood[] = ['happy', 'curious', 'sleepy', 'excited', 'confused', 'neutral', 'lovestruck']
-
-interface ChatMessage {
-  role: 'user' | 'assistant'
-  content: string
-}
 
 interface ApiRequest {
   method?: string
@@ -70,45 +66,6 @@ function parseModelOutput(rawText: string): { reply: string; mood: Mood; newFact
   }
 }
 
-async function callGemini(message: string, history: ChatMessage[], systemPrompt: string): Promise<string> {
-  const apiKey = process.env.GEMINI_API_KEY
-  const model = process.env.GEMINI_MODEL || 'gemini-2.5-flash'
-  if (!apiKey) throw new Error('GEMINI_API_KEY is not set')
-
-  const contents = [
-    ...history.map((m) => ({
-      role: m.role === 'assistant' ? 'model' : 'user',
-      parts: [{ text: m.content }],
-    })),
-    { role: 'user', parts: [{ text: message }] },
-  ]
-
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      contents,
-      systemInstruction: { parts: [{ text: systemPrompt }] },
-      generationConfig: { responseMimeType: 'application/json' },
-    }),
-  })
-
-  if (!response.ok) {
-    throw new Error(`Gemini API responded ${response.status}`)
-  }
-
-  interface GeminiResponse {
-    candidates?: { content?: { parts?: { text?: string }[] } }[]
-  }
-  const data = (await response.json()) as GeminiResponse
-  const text = data.candidates?.[0]?.content?.parts?.[0]?.text
-  if (typeof text !== 'string') {
-    throw new Error('Gemini response had no candidate text')
-  }
-  return text
-}
-
 export default async function handler(req: ApiRequest, res: ApiResponse) {
   if (req.method !== 'POST') {
     res.status(405).json({ error: 'Method not allowed' })
@@ -143,9 +100,12 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
 
     // Greeting mode (spec §5c "Greeting on return"): no user message exists
     // yet, so there's nothing to save back -- read-only, unlike a real turn.
-    const rawText = isGreeting
-      ? await callGemini('(the app just opened -- say hello, no user message yet)', [], systemPrompt)
-      : await callGemini(message, history, systemPrompt)
+    const messages: ChatMessage[] = isGreeting
+      ? [{ role: 'user', content: '(the app just opened -- say hello, no user message yet)' }]
+      : [...history, { role: 'user', content: message }]
+    // Single call: new_facts (spec §5b) is parsed out of this same JSON
+    // response below, not a second round-trip.
+    const rawText = await callLLM(systemPrompt, messages)
     const { reply, mood, newFacts } = parseModelOutput(rawText)
 
     if (!isGreeting) {
