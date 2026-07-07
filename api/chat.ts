@@ -4,7 +4,7 @@
 // structurally compatible with VercelRequest/VercelResponse in production,
 // and with the local Vite dev middleware in vite.config.ts.
 import type { ChatMessage, Mood } from './lib/types.js'
-import { loadMemory, resolveUserId } from './lib/memory.js'
+import { loadMemory, resolveUserId, toChatHistory } from './lib/memory.js'
 import { saveGreeting, saveTurn } from './lib/memory-write.js'
 import { callLLM } from './lib/llm.js'
 import { buildGreetingInstruction, buildMemoryBlock, buildOutputFormatInstructions, buildSpecialDayLine } from './lib/prompt.js'
@@ -59,18 +59,9 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     return
   }
 
-  const body = (req.body ?? {}) as { message?: unknown; history?: unknown; greeting?: unknown }
+  const body = (req.body ?? {}) as { message?: unknown; greeting?: unknown }
   const isGreeting = body.greeting === true
   const message = typeof body.message === 'string' ? body.message.trim() : ''
-  const history: ChatMessage[] = Array.isArray(body.history)
-    ? body.history.filter(
-        (m): m is ChatMessage =>
-          m &&
-          typeof m === 'object' &&
-          (m.role === 'user' || m.role === 'assistant') &&
-          typeof m.content === 'string'
-      )
-    : []
 
   if (!isGreeting && !message) {
     res.status(400).json({ error: 'message is required' })
@@ -108,7 +99,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     // §3).
     const messages: ChatMessage[] = isGreeting
       ? [{ role: 'user', content: '(the app just opened -- say hello, no user message yet)' }]
-      : [...history, { role: 'user', content: message }]
+      : [...toChatHistory(memory.messages), { role: 'user', content: message }]
     // Single call: new_facts (spec §5b) is parsed out of this same JSON
     // response below, not a second round-trip.
     const rawText = await callLLM(systemPrompt, messages)

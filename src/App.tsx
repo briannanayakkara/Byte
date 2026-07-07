@@ -133,11 +133,10 @@ function App() {
   async function handleSend(text: string) {
     setThought(null)
     setFact(null)
-    const history = messages
     setMessages((prev) => [...prev, { role: 'user', content: text }])
     setIsSending(true)
     try {
-      const { reply, mood: replyMood } = await sendChatMessage(text, history)
+      const { reply, mood: replyMood } = await sendChatMessage(text)
       setMessages((prev) => [...prev, { role: 'assistant', content: reply }])
       window.Byte?.set(replyMood)
     } catch {
