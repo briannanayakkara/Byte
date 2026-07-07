@@ -7,6 +7,13 @@ const ENERGY_FLOOR_HOURS = 72 // 3 days -- fully decayed to the floor by this po
 const ENERGY_FLOOR = 30 // never drops below this -- EMO gets bored, it doesn't shut down
 const ENERGY_INTERACTION_BUMP = 8 // added on every new turn, capped at 100
 
+// Mirrored in supabase/migrations/20260707010000_atomic_character_turn_upsert.sql's
+// upsert_character_turn() CASE expression for atomic writes (design doc
+// docs/superpowers/specs/2026-07-07-byte-v3-character-and-continuity-design.md
+// §4) -- no longer called from the write path (saveTurn in memory-write.ts
+// uses the SQL function instead), kept here as the single TypeScript-side
+// reference for the bucket thresholds. A future threshold change must
+// update both places.
 export function relationshipLevel(interactionCount: number): 1 | 2 | 3 | 4 {
   if (interactionCount < 5) return 1 // New
   if (interactionCount < 20) return 2 // Warming up

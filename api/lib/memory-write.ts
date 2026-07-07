@@ -2,7 +2,7 @@
 // 3). Called best-effort from chat.ts -- a failure here must never turn a
 // successful LLM reply into a 500 for the browser.
 import { supabase } from './supabase.js'
-import { computeEnergy, computeStreak, relationshipLevel } from './relationship.js'
+import { computeEnergy, computeStreak } from './relationship.js'
 import type { CharacterState, Mood } from './types.js'
 
 interface SaveTurnInput {
@@ -18,27 +18,24 @@ export async function saveTurn(
   { userMessage, reply, mood, newFacts }: SaveTurnInput
 ): Promise<void> {
   const now = new Date().toISOString()
-  const interactionCount = priorState.interaction_count + 1
 
   await Promise.all([
     supabase.from('messages').insert([
       { user_id: userId, role: 'user', content: userMessage },
       { user_id: userId, role: 'assistant', content: reply, mood },
     ]),
-    // upsert, not update: the first-ever turn for a user has no existing
-    // character_state row (spec §9 step 6 seeding deliberately skips it).
-    supabase.from('character_state').upsert(
-      {
-        user_id: userId,
-        mood,
-        energy: computeEnergy(priorState.last_seen_at, priorState.energy),
-        interaction_count: interactionCount,
-        last_seen_at: now,
-        relationship_level: relationshipLevel(interactionCount),
-        streak_days: computeStreak(priorState.last_seen_at, priorState.streak_days),
-      },
-      { onConflict: 'user_id' }
-    ),
+    // RPC instead of a plain upsert (design doc
+    // docs/superpowers/specs/2026-07-07-byte-v3-character-and-continuity-design.md
+    // §4): interaction_count/relationship_level increment atomically
+    // in Postgres against the row's current value, not a client-side
+    // snapshot -- see supabase/migrations/20260707010000_atomic_character_turn_upsert.sql.
+    supabase.rpc('upsert_character_turn', {
+      p_user_id: userId,
+      p_mood: mood,
+      p_energy: computeEnergy(priorState.last_seen_at, priorState.energy),
+      p_last_seen_at: now,
+      p_streak_days: computeStreak(priorState.last_seen_at, priorState.streak_days),
+    }),
     ...newFacts.map((content) => upsertFact(userId, content)),
   ])
 }
