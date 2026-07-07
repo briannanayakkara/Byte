@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Character } from './components/Character'
 import { ChatInput } from './components/ChatInput'
+import { MoodBubble } from './components/MoodBubble'
 import { SpeechBubble } from './components/SpeechBubble'
 import { ThoughtBubble } from './components/ThoughtBubble'
 import { fetchGreeting, sendChatMessage } from './lib/chatApi'
@@ -141,6 +142,7 @@ function App() {
             top. */}
         <div className="relative">
           <Character mood={mood} />
+          <MoodBubble mood={mood} />
           {thought ? <ThoughtBubble emojis={thought} /> : bubbleText && <SpeechBubble text={bubbleText} />}
         </div>
       </div>
