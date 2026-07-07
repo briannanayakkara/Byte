@@ -53,18 +53,6 @@ function App() {
 
       {bubbleText && <SpeechBubble text={bubbleText} />}
 
-      {/* Freepik free-license attribution (required) for the character
-          illustration -- see public/boy-with-different-set-faces-illustration.zip's
-          "License free.txt". */}
-      <a
-        href="http://www.freepik.com"
-        target="_blank"
-        rel="noreferrer"
-        className="absolute bottom-1 right-2 text-[10px] text-white/40 hover:text-white/70"
-      >
-        Designed by brgfx / Freepik
-      </a>
-
       <div className="absolute inset-x-0 bottom-4 flex flex-col items-center gap-3 px-4">
         <ChatInput onSend={handleSend} disabled={isSending} />
 
