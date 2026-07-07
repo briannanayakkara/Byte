@@ -200,11 +200,27 @@ const HOLIDAY_DISPLAY: Record<'halloween' | 'christmas' | 'newyear' | 'valentine
 // Design doc §7: birthday takes priority over a same-day holiday (rare,
 // but a birthday is the more personal occasion). Both instruct the LLM to
 // actually pick the matching mood, not just mention the day in passing.
+// Deliberately forceful wording + placed last in the assembled prompt
+// (chat.ts) rather than mid-prompt: live verification found the softer,
+// earlier-positioned version wasn't reliably followed by the project's
+// local 3B model on a long, dense prompt -- small models weight the most
+// recent instructions more heavily than ones buried earlier.
 export function buildSpecialDayLine(userName: string, birthday: string | null, now: Date = new Date()): string {
   if (isBirthdayToday(birthday, now)) {
-    return `\n\nToday is ${userName}'s birthday! Pick "birthday" as your mood and make a bigger deal of it than usual.`
+    return `\n\nOVERRIDE, read this last and take it seriously: today is ${userName}'s birthday! Whatever else this conversation is about, you MUST set "mood" to exactly "birthday" in your JSON reply and make it a real celebration -- this beats every other mood guidance above.`
   }
   const holiday = getHolidayToday(now)
   if (holiday === null) return ''
-  return `\n\nToday happens to be ${HOLIDAY_DISPLAY[holiday]} -- pick "${holiday}" as your mood if it fits the moment.`
+  return `\n\nOVERRIDE, read this last and take it seriously: today happens to be ${HOLIDAY_DISPLAY[holiday]}. If it fits the moment at all, you MUST set "mood" to exactly "${holiday}" in your JSON reply -- lean into it rather than defaulting to something safer.`
+}
+
+// Echoed again at the very end of the assembled prompt (chat.ts) alongside
+// buildSpecialDayLine's override, for the same reason: live verification
+// found a milestone mentioned only once inside buildMemoryBlock's long
+// paragraph wasn't reliably acted on by the project's local 3B model. This
+// is a deliberate, short, emphatic repeat of the same signal already in
+// buildMemoryBlock -- not new content, just recency-boosted.
+export function buildMilestoneReminder(newMilestone: string | null): string {
+  if (newMilestone === null) return ''
+  return `\n\nOVERRIDE, read this last and take it seriously: ${MILESTONE_COPY[newMilestone] ?? newMilestone} -- you MUST explicitly call this out and celebrate it in your reply text this one time, not just pick a happy mood silently.`
 }

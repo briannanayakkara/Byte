@@ -8,7 +8,7 @@ import { FACT_CATEGORIES } from './lib/types.js'
 import { loadMemory, resolveUserId, toChatHistory } from './lib/memory.js'
 import { saveGreeting, saveTurn } from './lib/memory-write.js'
 import { callLLM } from './lib/llm.js'
-import { buildGreetingInstruction, buildMemoryBlock, buildOutputFormatInstructions, buildSpecialDayLine } from './lib/prompt.js'
+import { buildGreetingInstruction, buildMemoryBlock, buildMilestoneReminder, buildOutputFormatInstructions, buildSpecialDayLine } from './lib/prompt.js'
 import { canCatchCold, computeEnergy, computeStreak, newMilestones, relationshipLevel } from './lib/relationship.js'
 import { SELECTABLE_MOODS } from './lib/moods.js'
 import { loadActiveBasePersonality } from './lib/personality.js'
@@ -118,8 +118,8 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     // Assembly order per docs/byte-base-personality.md §10: fixed soul, then
     // the evolving memory block, then mechanical output-format instructions.
     const systemPrompt = isGreeting
-      ? `${basePersonality}\n\n${buildMemoryBlock(promptMemory, signals)}${specialDayLine}\n\n${buildGreetingInstruction()}\n\n${buildOutputFormatInstructions()}`
-      : `${basePersonality}\n\n${buildMemoryBlock(promptMemory, signals)}${specialDayLine}\n\n${buildOutputFormatInstructions()}`
+      ? `${basePersonality}\n\n${buildMemoryBlock(promptMemory, signals)}\n\n${buildGreetingInstruction()}\n\n${buildOutputFormatInstructions()}${specialDayLine}${buildMilestoneReminder(signals.newMilestone)}`
+      : `${basePersonality}\n\n${buildMemoryBlock(promptMemory, signals)}\n\n${buildOutputFormatInstructions()}${specialDayLine}${buildMilestoneReminder(signals.newMilestone)}`
 
     // Greeting mode (spec §5c "Greeting on return"): no user message exists
     // yet, so there's no conversational turn to save -- but the resulting

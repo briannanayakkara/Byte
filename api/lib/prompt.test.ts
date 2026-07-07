@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildMemoryBlock, buildOutputFormatInstructions, buildSpecialDayLine } from './prompt.js'
+import { buildMemoryBlock, buildMilestoneReminder, buildOutputFormatInstructions, buildSpecialDayLine } from './prompt.js'
 import type { MemorySnapshot } from './memory.js'
 
 const BASE_MEMORY: MemorySnapshot = {
@@ -69,5 +69,17 @@ describe('buildSpecialDayLine', () => {
     const line = buildSpecialDayLine('Sam', '1998-12-25', new Date('2026-12-25T12:00:00.000Z'))
     expect(line).toContain('birthday')
     expect(line).toContain('Sam')
+  })
+})
+
+describe('buildMilestoneReminder', () => {
+  it('returns an empty string when there is no new milestone', () => {
+    expect(buildMilestoneReminder(null)).toBe('')
+  })
+
+  it('echoes the milestone copy with an OVERRIDE prefix when one is passed', () => {
+    const line = buildMilestoneReminder('interactions_100')
+    expect(line).toContain('OVERRIDE')
+    expect(line).toContain('ONE HUNDRED conversations')
   })
 })
