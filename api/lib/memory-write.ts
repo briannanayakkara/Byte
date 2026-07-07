@@ -2,7 +2,7 @@
 // 3). Called best-effort from chat.ts -- a failure here must never turn a
 // successful LLM reply into a 500 for the browser.
 import { supabase } from './supabase.js'
-import { computeStreak, relationshipLevel } from './relationship.js'
+import { computeEnergy, computeStreak } from './relationship.js'
 import type { CharacterState, Mood } from './types.js'
 
 interface SaveTurnInput {
@@ -18,27 +18,24 @@ export async function saveTurn(
   { userMessage, reply, mood, newFacts }: SaveTurnInput
 ): Promise<void> {
   const now = new Date().toISOString()
-  const interactionCount = priorState.interaction_count + 1
 
   await Promise.all([
     supabase.from('messages').insert([
       { user_id: userId, role: 'user', content: userMessage },
       { user_id: userId, role: 'assistant', content: reply, mood },
     ]),
-    // upsert, not update: the first-ever turn for a user has no existing
-    // character_state row (spec §9 step 6 seeding deliberately skips it).
-    supabase.from('character_state').upsert(
-      {
-        user_id: userId,
-        mood,
-        energy: priorState.energy,
-        interaction_count: interactionCount,
-        last_seen_at: now,
-        relationship_level: relationshipLevel(interactionCount),
-        streak_days: computeStreak(priorState.last_seen_at, priorState.streak_days),
-      },
-      { onConflict: 'user_id' }
-    ),
+    // RPC instead of a plain upsert (design doc
+    // docs/superpowers/specs/2026-07-07-byte-v3-character-and-continuity-design.md
+    // §4): interaction_count/relationship_level increment atomically
+    // in Postgres against the row's current value, not a client-side
+    // snapshot -- see supabase/migrations/20260707010000_atomic_character_turn_upsert.sql.
+    supabase.rpc('upsert_character_turn', {
+      p_user_id: userId,
+      p_mood: mood,
+      p_energy: computeEnergy(priorState.last_seen_at, priorState.energy),
+      p_last_seen_at: now,
+      p_streak_days: computeStreak(priorState.last_seen_at, priorState.streak_days),
+    }),
     ...newFacts.map((content) => upsertFact(userId, content)),
   ])
 }
@@ -59,4 +56,20 @@ async function upsertFact(userId: string, content: string): Promise<void> {
   } else {
     await supabase.from('facts').insert({ user_id: userId, content, category: 'other' })
   }
+}
+
+// Design doc docs/superpowers/specs/2026-07-07-byte-v3-character-and-continuity-design.md
+// §3: closes the greeting path's previous read-only behavior. Unlike
+// saveTurn, this deliberately touches ONLY mood/energy -- never
+// interaction_count/relationship_level/streak_days/last_seen_at. Opening
+// the app is Byte noticing you're there, not a conversation; the
+// relationship must only deepen from a real back-and-forth turn. For a
+// brand-new user with no character_state row yet, the INSERT path falls
+// back to the table's own column defaults (relationship_level 1,
+// interaction_count 0, streak_days 0) for everything not given here --
+// correct for a first-ever greeting with no history. For a returning
+// user, the UPDATE path (on conflict) touches only mood/energy, leaving
+// every relationship field untouched.
+export async function saveGreeting(userId: string, mood: Mood, energy: number): Promise<void> {
+  await supabase.from('character_state').upsert({ user_id: userId, mood, energy }, { onConflict: 'user_id' })
 }

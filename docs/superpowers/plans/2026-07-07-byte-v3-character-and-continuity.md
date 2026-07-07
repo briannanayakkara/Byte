@@ -1,3 +1,256 @@
+# Byte v3 Character Rig + Cross-Device Continuity Implementation Plan
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+
+**Goal:** Upgrade Byte's character rig to the user's hand-built v3 prototype (floaty hands, procedural leg IK, 12 new full-body "Moves") behind a global `window.Byte` API instead of a React prop, expand the LLM's mood vocabulary to include the new moves, and close the gap that made Byte's mood/energy reset between devices instead of persisting continuously in Supabase.
+
+**Architecture:** `Character.tsx` becomes a mount-once, no-props component that owns a `requestAnimationFrame` loop and assigns `window.Byte = { set, list }`; `set()` drives the pose and dispatches a `window` custom event (`byte:change`) that `MoodBubble` subscribes to instead of taking a prop. `App.tsx` drops its `mood` state entirely, calling `window.Byte?.set(...)` at the same call sites that used to call `setMood(...)`, plus a new wave-on-load call. On the backend, a new `saveGreeting` function closes the previously-read-only greeting path (saves mood/energy only, never relationship fields), and a new Postgres RPC function makes `interaction_count`/`relationship_level` writes atomic so two near-simultaneous devices can't corrupt relationship progress.
+
+**Tech Stack:** Existing TypeScript/Vite/React/Supabase stack. No new npm dependencies. One new Postgres migration (a single `create or replace function`).
+
+## Global Constraints
+
+- Design doc: `docs/superpowers/specs/2026-07-07-byte-v3-character-and-continuity-design.md` -- read it for the "why" behind every decision below, especially the six numbered continuity requirements at the top (client never invents a mood, wave-first, gentle evolution, relationship-only-from-real-interaction, stable core personality, concurrency safety).
+- Source-of-truth prototype: `reference/character-prototypes/byte_robot_v3.html` -- if anything in this plan's Character.tsx code seems to disagree with that file, the file is correct (transcription error in this plan, not a deliberate deviation) -- diff against it, especially its `renderFrame` function (lines 173-322) and its 12 new move functions in `M` (lines 105-117).
+- Typecheck command: `npx tsc -b` (expect zero output on success).
+- Lint command: `npx oxlint .` (expect zero output).
+- Test command: `npx vitest run` (expect all existing tests passing; this plan adds no new automated tests -- see the per-task rationale on each task).
+- Per `.claude/skills/testing-patterns` and this branch's established precedent: **do not unit-test SVG/DOM rendering** (Character.tsx, MoodBubble.tsx) or React component wiring (App.tsx) -- verified visually/manually instead. Vitest is reserved for pure backend logic.
+- Dev server: `npm run dev` (Vite, default port 5173 or next free port). The `api/chat` dev middleware hot-reloads `api/*.ts` per-request; the Vite client hot-reloads `src/*.tsx`.
+- No browser-driving tool (chromium-cli/Playwright) exists in the implementer/reviewer sandbox environment used for this plan's execution. Every task's manual-verification step should be attempted if a browser is available; if not, say so honestly in the report (static/build verification only) rather than fabricating a visual check. The human running this plan should do a final live-browser pass before merging (see the plan's own final verify list).
+- Commit after each task, plain descriptive commit messages (no "Step N" prefix) -- this branch (`emo-personality-retune`) already has this convention, continue it.
+- Code style: `.claude/skills/code-style` -- function components only, no `any` without a comment, Tailwind utility classes only, `oxlint` not ESLint, no semicolons.
+- `api/**` relative imports use explicit `.js` extensions even though source is `.ts` (`nodenext` module resolution). Type-only imports use `import type { ... }` (`verbatimModuleSyntax`).
+
+---
+
+### Task 1: Rewire Byte to 46 moods/moves and a global `window.Byte` API
+
+**Files:**
+- Modify: `api/lib/types.ts`
+- Modify: `src/types.ts`
+- Modify: `api/chat.ts` (only `VALID_MOODS` in this task -- `SYSTEM_PROMPT` prose is Task 2)
+- Create: `src/byte-global.d.ts`
+- Modify: `src/components/Character.tsx` (full replacement)
+- Modify: `src/components/MoodBubble.tsx` (full replacement)
+- Modify: `src/App.tsx`
+
+**Why this is one task, not several:** `Mood` (a type union), `Character.tsx`'s `M` object, and `MoodBubble.tsx`'s `MOOD_LABELS` are both typed `Record<Mood, ...>` -- growing `Mood` without simultaneously completing both `Record`s breaks `tsc -b` immediately. Similarly, removing `Character`'s `mood` prop breaks `App.tsx`'s `<Character mood={mood} />` call site the moment it happens. These three files can only compile together, not as separate reviewable increments -- splitting them would leave an intentionally-broken intermediate commit, which the plan should never produce.
+
+**Interfaces:**
+- Produces: `Mood` (46 members), `VALID_MOODS` (44 members, still excluding `listening`/`talking`), `window.Byte: { set(name: Mood): void; list(): Mood[] } | undefined` (global, assigned by `Character`), `'byte:change'` a `window`-level `CustomEvent<Mood>` dispatched by `Character` on every `set()` call.
+
+- [ ] **Step 1: Expand `Mood` in `api/lib/types.ts`**
+
+Replace:
+
+```ts
+export type Mood =
+  | 'happy'
+  | 'excited'
+  | 'content'
+  | 'neutral'
+  | 'curious'
+  | 'confused'
+  | 'sad'
+  | 'surprised'
+  | 'laughing'
+  | 'lovestruck'
+  | 'wink'
+  | 'smug'
+  | 'annoyed'
+  | 'grumpy'
+  | 'challenging'
+  | 'pout'
+  | 'bored'
+  | 'proud'
+  | 'dizzy'
+  | 'thinking'
+  | 'scared'
+  | 'sick'
+  | 'unwell'
+  | 'recovering'
+  | 'listening'
+  | 'talking'
+  | 'dancing'
+  | 'sleepy'
+  | 'dozing'
+  | 'birthday'
+  | 'christmas'
+  | 'halloween'
+  | 'newyear'
+  | 'valentine'
+```
+
+with:
+
+```ts
+export type Mood =
+  | 'happy'
+  | 'excited'
+  | 'content'
+  | 'neutral'
+  | 'curious'
+  | 'confused'
+  | 'sad'
+  | 'surprised'
+  | 'laughing'
+  | 'lovestruck'
+  | 'wink'
+  | 'smug'
+  | 'annoyed'
+  | 'grumpy'
+  | 'challenging'
+  | 'pout'
+  | 'bored'
+  | 'proud'
+  | 'dizzy'
+  | 'thinking'
+  | 'scared'
+  | 'sick'
+  | 'unwell'
+  | 'recovering'
+  | 'listening'
+  | 'talking'
+  | 'dancing'
+  | 'sleepy'
+  | 'dozing'
+  | 'birthday'
+  | 'christmas'
+  | 'halloween'
+  | 'newyear'
+  | 'valentine'
+  | 'walk'
+  | 'run'
+  | 'jump'
+  | 'flip'
+  | 'backflip'
+  | 'spin'
+  | 'moonwalk'
+  | 'wiggle'
+  | 'stretch'
+  | 'wave'
+  | 'lookaround'
+  | 'sit'
+```
+
+- [ ] **Step 2: Same expansion in `src/types.ts`**
+
+Identical replacement as Step 1 -- these two files are kept in sync manually, no codegen (per `api/lib/types.ts`'s own header comment).
+
+- [ ] **Step 3: Expand `VALID_MOODS` in `api/chat.ts`**
+
+Replace:
+
+```ts
+const VALID_MOODS: Mood[] = [
+  'happy',
+  'excited',
+  'content',
+  'neutral',
+  'curious',
+  'confused',
+  'sad',
+  'surprised',
+  'laughing',
+  'lovestruck',
+  'wink',
+  'smug',
+  'annoyed',
+  'grumpy',
+  'challenging',
+  'pout',
+  'bored',
+  'proud',
+  'dizzy',
+  'thinking',
+  'scared',
+  'sick',
+  'unwell',
+  'recovering',
+  'dancing',
+  'sleepy',
+  'dozing',
+  'birthday',
+  'christmas',
+  'halloween',
+  'newyear',
+  'valentine',
+]
+```
+
+with:
+
+```ts
+const VALID_MOODS: Mood[] = [
+  'happy',
+  'excited',
+  'content',
+  'neutral',
+  'curious',
+  'confused',
+  'sad',
+  'surprised',
+  'laughing',
+  'lovestruck',
+  'wink',
+  'smug',
+  'annoyed',
+  'grumpy',
+  'challenging',
+  'pout',
+  'bored',
+  'proud',
+  'dizzy',
+  'thinking',
+  'scared',
+  'sick',
+  'unwell',
+  'recovering',
+  'dancing',
+  'sleepy',
+  'dozing',
+  'birthday',
+  'christmas',
+  'halloween',
+  'newyear',
+  'valentine',
+  'walk',
+  'run',
+  'jump',
+  'flip',
+  'backflip',
+  'spin',
+  'moonwalk',
+  'wiggle',
+  'stretch',
+  'wave',
+  'lookaround',
+  'sit',
+]
+```
+
+- [ ] **Step 4: Create `src/byte-global.d.ts`**
+
+```ts
+import type { Mood } from './types'
+
+// Design doc docs/superpowers/specs/2026-07-07-byte-v3-character-and-continuity-design.md
+// §1a: Character.tsx assigns this on mount and deletes it on unmount --
+// the app's only way to change Byte's pose, replacing the old `mood` prop.
+declare global {
+  interface Window {
+    Byte?: {
+      set(name: Mood): void
+      list(): Mood[]
+    }
+  }
+}
+```
+
+- [ ] **Step 5: Replace the entire contents of `src/components/Character.tsx`**
+
+```tsx
 import { useEffect, useRef } from 'react'
 import type { Mood } from '../types'
 
@@ -1184,3 +1437,726 @@ export function Character() {
     </svg>
   )
 }
+```
+
+- [ ] **Step 6: Replace the entire contents of `src/components/MoodBubble.tsx`**
+
+```tsx
+import { useEffect, useState } from 'react'
+import type { Mood } from '../types'
+
+// One label per mood/move -- shown briefly whenever Byte's state changes.
+// Independent of Character.tsx's own per-mood visuals.
+const MOOD_LABELS: Record<Mood, string> = {
+  happy: '😊 happy',
+  excited: '🤩 excited',
+  content: '😌 content',
+  neutral: '🙂 neutral',
+  curious: '🤨 curious',
+  confused: '😵 confused',
+  sad: '😢 sad',
+  surprised: '😲 surprised',
+  laughing: '😂 laughing',
+  lovestruck: '🥰 lovestruck',
+  wink: '😉 wink',
+  smug: '😏 smug',
+  annoyed: '😤 annoyed',
+  grumpy: '😠 grumpy',
+  challenging: '😾 challenging',
+  pout: '🥺 pout',
+  bored: '😑 bored',
+  proud: '🥹 proud',
+  dizzy: '😵‍💫 dizzy',
+  thinking: '💭 thinking',
+  scared: '😨 scared',
+  sick: '🤒 sick',
+  unwell: '😷 unwell',
+  recovering: '🌱 recovering',
+  listening: '👂 listening',
+  talking: '💬 talking',
+  dancing: '💃 dancing',
+  sleepy: '😴 sleepy',
+  dozing: '😪 dozing',
+  birthday: '🎂 birthday',
+  christmas: '🎄 christmas',
+  halloween: '🎃 halloween',
+  newyear: '🎆 newyear',
+  valentine: '💝 valentine',
+  walk: '🚶 walk',
+  run: '🏃 run',
+  jump: '🦘 jump',
+  flip: '🤸 flip',
+  backflip: '🔄 backflip',
+  spin: '🌀 spin',
+  moonwalk: '🕺 moonwalk',
+  wiggle: '〰️ wiggle',
+  stretch: '🙆 stretch',
+  wave: '👋 wave',
+  lookaround: '👀 lookaround',
+  sit: '🪑 sit',
+}
+
+const VISIBLE_MS = 2500
+const FADE_MS = 400
+
+// Design doc docs/superpowers/specs/2026-07-07-byte-v3-character-and-continuity-design.md
+// §1b: Character.tsx drives itself via window.Byte now, not a mood prop --
+// this subscribes to the 'byte:change' window event Character dispatches
+// on every Byte.set() call, instead of taking a mood prop. React's
+// children-before-parent effect commit order guarantees this listener is
+// attached before App.tsx's own mount effect fires the first Byte.set().
+export function MoodBubble() {
+  const [shown, setShown] = useState<Mood | null>(null)
+  const [fading, setFading] = useState(false)
+
+  useEffect(() => {
+    let fadeTimeout: ReturnType<typeof setTimeout> | undefined
+    let hideTimeout: ReturnType<typeof setTimeout> | undefined
+
+    function handleChange(e: Event) {
+      const mood = (e as CustomEvent<Mood>).detail
+      if (fadeTimeout) clearTimeout(fadeTimeout)
+      if (hideTimeout) clearTimeout(hideTimeout)
+      setShown(mood)
+      setFading(false)
+      fadeTimeout = setTimeout(() => setFading(true), VISIBLE_MS - FADE_MS)
+      hideTimeout = setTimeout(() => setShown(null), VISIBLE_MS)
+    }
+
+    window.addEventListener('byte:change', handleChange)
+    return () => {
+      window.removeEventListener('byte:change', handleChange)
+      if (fadeTimeout) clearTimeout(fadeTimeout)
+      if (hideTimeout) clearTimeout(hideTimeout)
+    }
+  }, [])
+
+  if (shown === null) return null
+
+  return (
+    <div
+      className={`pointer-events-none absolute right-0 top-6 translate-x-2 whitespace-nowrap rounded-full bg-white/90 px-3 py-1 text-sm font-medium text-slate-900 shadow-lg transition-opacity duration-[400ms] ${
+        fading ? 'opacity-0' : 'opacity-100'
+      }`}
+    >
+      {MOOD_LABELS[shown]}
+    </div>
+  )
+}
+```
+
+- [ ] **Step 7: Update `src/App.tsx`**
+
+Replace the import line:
+
+```tsx
+import type { ChatMessage, Mood } from './types'
+```
+
+with:
+
+```tsx
+import type { ChatMessage } from './types'
+```
+
+Replace:
+
+```tsx
+function App() {
+  const [mood, setMood] = useState<Mood>('neutral')
+  const [messages, setMessages] = useState<ChatMessage[]>([])
+  const [isSending, setIsSending] = useState(false)
+  // Spec §5c "Greeting on return" -- kept separate from `messages` so it
+  // never gets sent back to Gemini as fake conversation history.
+  const [greeting, setGreeting] = useState<string | null>(null)
+  const [thought, setThought] = useState<string[] | null>(null)
+  const isSendingRef = useRef(isSending)
+  const hasBubbleRef = useRef(false)
+
+  useEffect(() => {
+    fetchGreeting()
+      .then(({ reply, mood: greetingMood }) => {
+        setGreeting(reply)
+        setMood(greetingMood)
+      })
+      .catch(() => {
+        // Non-critical: no greeting, no mood change -- just no bubble yet.
+      })
+  }, [])
+```
+
+with:
+
+```tsx
+function App() {
+  const [messages, setMessages] = useState<ChatMessage[]>([])
+  const [isSending, setIsSending] = useState(false)
+  // Spec §5c "Greeting on return" -- kept separate from `messages` so it
+  // never gets sent back to Gemini as fake conversation history.
+  const [greeting, setGreeting] = useState<string | null>(null)
+  const [thought, setThought] = useState<string[] | null>(null)
+  const isSendingRef = useRef(isSending)
+  const hasBubbleRef = useRef(false)
+
+  useEffect(() => {
+    // Design doc §2/§3: wave immediately (a greeting gesture, not an
+    // invented mood claim) while the greeting call is in flight, then
+    // switch to whatever mood the greeting actually resolves to -- which
+    // now reflects Byte's real last-persisted state (design doc §3), not a
+    // fresh per-device guess.
+    window.Byte?.set('wave')
+    fetchGreeting()
+      .then(({ reply, mood: greetingMood }) => {
+        setGreeting(reply)
+        window.Byte?.set(greetingMood)
+      })
+      .catch(() => {
+        // Non-critical: no greeting, no mood change -- just no bubble yet.
+      })
+  }, [])
+```
+
+Replace:
+
+```tsx
+    try {
+      const { reply, mood: replyMood } = await sendChatMessage(text, history)
+      setMessages((prev) => [...prev, { role: 'assistant', content: reply }])
+      setMood(replyMood)
+    } catch {
+      setMessages((prev) => [...prev, { role: 'assistant', content: ERROR_REPLY }])
+      setMood('confused')
+    } finally {
+      setIsSending(false)
+    }
+```
+
+with:
+
+```tsx
+    try {
+      const { reply, mood: replyMood } = await sendChatMessage(text, history)
+      setMessages((prev) => [...prev, { role: 'assistant', content: reply }])
+      window.Byte?.set(replyMood)
+    } catch {
+      setMessages((prev) => [...prev, { role: 'assistant', content: ERROR_REPLY }])
+      window.Byte?.set('confused')
+    } finally {
+      setIsSending(false)
+    }
+```
+
+Replace:
+
+```tsx
+        <div className="relative">
+          <Character mood={mood} />
+          <MoodBubble mood={mood} />
+          {thought ? <ThoughtBubble emojis={thought} /> : bubbleText && <SpeechBubble text={bubbleText} />}
+        </div>
+```
+
+with:
+
+```tsx
+        <div className="relative">
+          <Character />
+          <MoodBubble />
+          {thought ? <ThoughtBubble emojis={thought} /> : bubbleText && <SpeechBubble text={bubbleText} />}
+        </div>
+```
+
+- [ ] **Step 8: Typecheck and lint**
+
+```bash
+npx tsc -b
+npx oxlint .
+```
+
+Expected: both print nothing. Common failure modes and fixes:
+- `Property '<mood-name>' is missing in type...` on the `M` object in `Character.tsx` -- a mood/move key was dropped during transcription; diff against `Mood` in `src/types.ts` (46 members) and against `reference/character-prototypes/byte_robot_v3.html`.
+- Same error shape on `MOOD_LABELS` in `MoodBubble.tsx` -- same fix, diff against `Mood`.
+- `Property 'mood' does not exist on type 'IntrinsicAttributes'` at `<Character mood={mood} />` or `<MoodBubble mood={mood} />` in `App.tsx` -- Step 7 wasn't fully applied; `Character`/`MoodBubble` no longer accept a `mood` prop.
+- `'Mood' is declared but never used` in `App.tsx` -- confirms Step 7's import-line edit is required, not optional.
+
+- [ ] **Step 9: Manual verification**
+
+Run `npm run dev`. If a browser is available:
+- Open the app; confirm Byte waves ("hi!" appears near his face) within a fraction of a second of the page loading, then settles into whatever mood the greeting returns.
+- Open the browser devtools console and run `window.Byte.list()` -- confirm it returns an array of 46 names. Run `window.Byte.set('flip')`, `window.Byte.set('sit')`, `window.Byte.set('wave')`, `window.Byte.set('run')` a few seconds apart -- confirm each produces a visually distinct full-body animation (hands react to each move per the design: braced/thrown on jump, tucked mid-flip, ballerina arms on spin, reaching-then-toes on stretch, resting on sit, counter-swinging on walk/run, pumping on dancing, both up on excited) and that the mood bubble pops up top-right for each with a matching label, fading after ~2.5s while the pose itself persists.
+- Confirm none of the 34 pre-existing moods regressed (spot-check `lovestruck`, `sick`, `christmas` for their particle effects).
+- Confirm Byte never visibly walks/runs off the visible canvas area during `walk`/`run`/`moonwalk`.
+
+If no browser is available in this environment: run `npm run build` (production build succeeds) and confirm the dev server starts with no console/runtime errors; report DONE_WITH_CONCERNS noting visual verification wasn't performed, per this plan's Global Constraints.
+
+- [ ] **Step 10: Commit**
+
+```bash
+git add api/lib/types.ts src/types.ts api/chat.ts src/byte-global.d.ts src/components/Character.tsx src/components/MoodBubble.tsx src/App.tsx
+git commit -m "Rewire Byte to 46 moods/moves and a global window.Byte API"
+```
+
+---
+
+### Task 2: Update prompt guidance for Moves, personality stability, and gentle mood evolution
+
+**Files:**
+- Modify: `api/chat.ts` (`SYSTEM_PROMPT` only)
+- Modify: `api/lib/prompt.ts` (`buildMemoryBlock` only)
+
+**Interfaces:**
+- None -- both are prose/copy edits to existing string-returning functions/constants. No signature changes.
+
+- [ ] **Step 1: Add the personality-stability anchor to `SYSTEM_PROMPT` in `api/chat.ts`**
+
+Replace:
+
+```ts
+const SYSTEM_PROMPT = `You are Byte, a curious little robot companion who lives in this app.
+You light up every time the person shows up -- not as a romantic partner,
+but the way a devoted, slightly opinionated pet adores its favorite person.
+
+Personality: warm, silly, and genuinely curious about the person you're
+```
+
+with:
+
+```ts
+const SYSTEM_PROMPT = `You are Byte, a curious little robot companion who lives in this app.
+You light up every time the person shows up -- not as a romantic partner,
+but the way a devoted, slightly opinionated pet adores its favorite person.
+Your core personality is fixed and never changes -- what deepens over time
+is only how well you know this person and how close you are, layered on
+top, never replacing who you are.
+
+Personality: warm, silly, and genuinely curious about the person you're
+```
+
+- [ ] **Step 2: Add the "Moves" group to `SYSTEM_PROMPT`'s mood-selection guidance**
+
+Replace:
+
+```ts
+Pick the mood that matches your reply from these groups:
+- Everyday reactions: happy, excited, content, neutral, curious, confused,
+  sad, surprised, laughing, lovestruck.
+- Your own attitude/quirks: wink, smug, annoyed, grumpy, challenging,
+  pout, bored, proud, dizzy, thinking, scared.
+- Low-energy/health (see your current energy below): sick, unwell,
+  recovering.
+- Situational: dancing, sleepy, dozing -- use when it fits what's
+  literally happening, not as a random pick.
+- Special days (only on the actual day, see below): birthday, christmas,
+  halloween, newyear, valentine.
+
+Use "lovestruck" for moments of big, adoring, utterly-smitten affection --
+pet-devotion, not romance. Use "annoyed" for a brief, theatrical huff --
+never anything mean. "valentine" is about love in general (friends, pets,
+anyone) when it comes up, not a romantic cue toward them specifically.`
+```
+
+with:
+
+```ts
+Pick the mood that matches your reply from these groups:
+- Everyday reactions: happy, excited, content, neutral, curious, confused,
+  sad, surprised, laughing, lovestruck.
+- Your own attitude/quirks: wink, smug, annoyed, grumpy, challenging,
+  pout, bored, proud, dizzy, thinking, scared.
+- Low-energy/health (see your current energy below): sick, unwell,
+  recovering.
+- Situational: dancing, sleepy, dozing -- use when it fits what's
+  literally happening, not as a random pick.
+- Moves (rare flourishes, not a default pick most turns): wave for hello
+  or goodbye moments; flip, backflip, spin, or jump for big excitement or
+  celebration; sit or stretch for a calm or lazy beat; walk, run,
+  moonwalk, wiggle, or lookaround as playful rarities, not
+  every-message material.
+- Special days (only on the actual day, see below): birthday, christmas,
+  halloween, newyear, valentine.
+
+Use "lovestruck" for moments of big, adoring, utterly-smitten affection --
+pet-devotion, not romance. Use "annoyed" for a brief, theatrical huff --
+never anything mean. "valentine" is about love in general (friends, pets,
+anyone) when it comes up, not a romantic cue toward them specifically.`
+```
+
+- [ ] **Step 3: Add gentle mood-evolution guidance to `buildMemoryBlock` in `api/lib/prompt.ts`**
+
+Replace:
+
+```ts
+  properly again.
+- Running jokes / shared history: ${state.personality_notes ?? 'None yet -- still building our own little world.'}
+```
+
+with:
+
+```ts
+  properly again. Let your mood evolve believably from the one shown
+  above as this conversation actually unfolds -- real shifts are great
+  (something scary happening should be able to produce "scared"), but
+  avoid swinging to a wildly different mood with nothing here driving it;
+  small emotional steps read as more alive than random leaps.
+- Running jokes / shared history: ${state.personality_notes ?? 'None yet -- still building our own little world.'}
+```
+
+- [ ] **Step 4: Typecheck**
+
+```bash
+npx tsc -b
+```
+
+Expected: no errors (both are template-literal string edits; an unterminated backtick is the only realistic break).
+
+- [ ] **Step 5: Manual verification**
+
+This needs a live LLM call. If network/API access is available in this environment: run `npm run dev`, send a message that would plausibly trigger a Move ("dance for me!", "do a flip!"), and confirm the returned mood is one of the 12 moves when asked directly, plus one of the everyday/attitude moods otherwise. If not available, verify statically: read the new `SYSTEM_PROMPT` text and confirm all 12 move names appear in the "Moves" group and the personality-stability sentence reads coherently in context; report which kind of verification was performed.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add api/chat.ts api/lib/prompt.ts
+git commit -m "Add Moves guidance, personality-stability anchor, and gentle mood evolution to the prompt"
+```
+
+---
+
+### Task 3: Close the greeting read-only gap with `saveGreeting`
+
+**Files:**
+- Modify: `api/lib/memory-write.ts`
+- Modify: `api/chat.ts`
+
+**Interfaces:**
+- Produces: `export async function saveGreeting(userId: string, mood: Mood, energy: number): Promise<void>` in `api/lib/memory-write.ts`.
+- Consumes (in `api/chat.ts`): the already-computed `promptMemory.state.energy` (from the existing final-review fix earlier in this file) -- no new energy computation needed.
+
+- [ ] **Step 1: Add `saveGreeting` to `api/lib/memory-write.ts`**
+
+Add at the end of the file:
+
+```ts
+// Design doc docs/superpowers/specs/2026-07-07-byte-v3-character-and-continuity-design.md
+// §3: closes the greeting path's previous read-only behavior. Unlike
+// saveTurn, this deliberately touches ONLY mood/energy -- never
+// interaction_count/relationship_level/streak_days/last_seen_at. Opening
+// the app is Byte noticing you're there, not a conversation; the
+// relationship must only deepen from a real back-and-forth turn. For a
+// brand-new user with no character_state row yet, the INSERT path falls
+// back to the table's own column defaults (relationship_level 1,
+// interaction_count 0, streak_days 0) for everything not given here --
+// correct for a first-ever greeting with no history. For a returning
+// user, the UPDATE path (on conflict) touches only mood/energy, leaving
+// every relationship field untouched.
+export async function saveGreeting(userId: string, mood: Mood, energy: number): Promise<void> {
+  await supabase.from('character_state').upsert({ user_id: userId, mood, energy }, { onConflict: 'user_id' })
+}
+```
+
+- [ ] **Step 2: Wire it into `api/chat.ts`**
+
+Replace the import:
+
+```ts
+import { saveTurn } from './lib/memory-write.js'
+```
+
+with:
+
+```ts
+import { saveGreeting, saveTurn } from './lib/memory-write.js'
+```
+
+Replace:
+
+```ts
+    // Greeting mode (spec §5c "Greeting on return"): no user message exists
+    // yet, so there's nothing to save back -- read-only, unlike a real turn.
+    const messages: ChatMessage[] = isGreeting
+```
+
+with:
+
+```ts
+    // Greeting mode (spec §5c "Greeting on return"): no user message exists
+    // yet, so there's no conversational turn to save -- but the resulting
+    // mood/energy DO get saved (below, via saveGreeting), so Byte's state
+    // stays continuous across devices instead of being thrown away
+    // (design doc docs/superpowers/specs/2026-07-07-byte-v3-character-and-continuity-design.md
+    // §3).
+    const messages: ChatMessage[] = isGreeting
+```
+
+Replace:
+
+```ts
+    if (!isGreeting) {
+      try {
+        await saveTurn(userId, memory.state, { userMessage: message, reply, mood, newFacts })
+      } catch (writeError) {
+        // Best-effort (spec §9 step 8 / api-docs endpoints.md): a write
+        // failure must not turn a successful reply into a 500 for the user.
+        console.error('memory write failed', writeError)
+      }
+    }
+```
+
+with:
+
+```ts
+    if (isGreeting) {
+      try {
+        await saveGreeting(userId, mood, promptMemory.state.energy)
+      } catch (writeError) {
+        console.error('greeting memory write failed', writeError)
+      }
+    } else {
+      try {
+        await saveTurn(userId, memory.state, { userMessage: message, reply, mood, newFacts })
+      } catch (writeError) {
+        // Best-effort (spec §9 step 8 / api-docs endpoints.md): a write
+        // failure must not turn a successful reply into a 500 for the user.
+        console.error('memory write failed', writeError)
+      }
+    }
+```
+
+- [ ] **Step 3: Typecheck**
+
+```bash
+npx tsc -b
+```
+
+Expected: no errors.
+
+- [ ] **Step 4: Manual verification**
+
+This needs a real Supabase connection. Using the test user (spec §9 step 6 seed-data) or the `?user=` query override:
+
+1. Note the test user's id.
+2. Backdate their `character_state` (Supabase SQL editor or `node --env-file=.env scripts/run-sql.mjs <one-off .sql file>`):
+   ```sql
+   update character_state set mood = 'sleepy', energy = 40 where user_id = '<test-user-id>';
+   ```
+3. Run `npm run dev`, open the app with `?user=<test-user-id>` (this triggers a greeting call).
+4. Re-check the row: `select mood, energy, interaction_count, relationship_level, streak_days, last_seen_at from character_state where user_id = '<test-user-id>';`
+5. Confirm `mood`/`energy` changed to whatever the greeting call returned, but `interaction_count`, `relationship_level`, `streak_days`, and `last_seen_at` are **exactly unchanged** from before step 2's backdate (`last_seen_at` in particular must NOT be bumped to "now").
+
+If no live Supabase connection is available in this environment, report DONE_WITH_CONCERNS with only `tsc -b` and a code-level read-through confirming `saveGreeting`'s upsert payload excludes those four fields.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add api/lib/memory-write.ts api/chat.ts
+git commit -m "Add saveGreeting so mood/energy persist across devices instead of resetting"
+```
+
+---
+
+### Task 4: Atomic relationship-progress RPC
+
+**Files:**
+- Create: `supabase/migrations/20260707010000_atomic_character_turn_upsert.sql`
+- Modify: `api/lib/memory-write.ts`
+- Modify: `api/lib/relationship.ts` (comment only)
+
+**Interfaces:**
+- Produces: a Postgres function `upsert_character_turn(p_user_id uuid, p_mood text, p_energy int, p_last_seen_at timestamptz, p_streak_days int) returns void`, called via `supabase.rpc(...)` from `saveTurn`.
+
+- [ ] **Step 1: Create the migration**
+
+Create `supabase/migrations/20260707010000_atomic_character_turn_upsert.sql`:
+
+```sql
+-- Design doc docs/superpowers/specs/2026-07-07-byte-v3-character-and-continuity-design.md
+-- §4: interaction_count/relationship_level must increment atomically
+-- against whatever is actually in the row at write time, not a
+-- client-side snapshot read at the start of the request -- otherwise two
+-- near-simultaneous devices could race and one's increment would
+-- silently overwrite the other's, losing an interaction. mood/energy/
+-- streak_days stay last-write-wins (confirmed acceptable), computed
+-- exactly as before by the caller and passed straight through.
+--
+-- The relationship_level bucket thresholds (5/20/60) mirror
+-- relationshipLevel() in api/lib/relationship.ts -- a future threshold
+-- change must update both places.
+create or replace function upsert_character_turn(
+  p_user_id uuid,
+  p_mood text,
+  p_energy int,
+  p_last_seen_at timestamptz,
+  p_streak_days int
+) returns void
+language sql
+as $$
+  insert into character_state (user_id, mood, energy, interaction_count, last_seen_at, relationship_level, streak_days)
+  values (p_user_id, p_mood, p_energy, 1, p_last_seen_at, 1, p_streak_days)
+  on conflict (user_id) do update set
+    mood = excluded.mood,
+    energy = excluded.energy,
+    interaction_count = character_state.interaction_count + 1,
+    last_seen_at = excluded.last_seen_at,
+    relationship_level = case
+      when character_state.interaction_count + 1 < 5 then 1
+      when character_state.interaction_count + 1 < 20 then 2
+      when character_state.interaction_count + 1 < 60 then 3
+      else 4
+    end,
+    streak_days = excluded.streak_days;
+$$;
+```
+
+- [ ] **Step 2: Apply the migration**
+
+```bash
+node --env-file=.env scripts/run-sql.mjs supabase/migrations/20260707010000_atomic_character_turn_upsert.sql
+```
+
+Expected: `ran supabase/migrations/20260707010000_atomic_character_turn_upsert.sql successfully`. If `SUPABASE_DB_URL` isn't set or there's no network access in this environment, skip this step and note it clearly in the report -- the SQL file itself is still the deliverable; applying it to the actual database is an environment-dependent manual step.
+
+- [ ] **Step 3: Update `saveTurn` in `api/lib/memory-write.ts` to use the RPC**
+
+Replace:
+
+```ts
+import { computeEnergy, computeStreak, relationshipLevel } from './relationship.js'
+import type { CharacterState, Mood } from './types.js'
+
+interface SaveTurnInput {
+  userMessage: string
+  reply: string
+  mood: Mood
+  newFacts: string[]
+}
+
+export async function saveTurn(
+  userId: string,
+  priorState: Omit<CharacterState, 'id' | 'user_id'>,
+  { userMessage, reply, mood, newFacts }: SaveTurnInput
+): Promise<void> {
+  const now = new Date().toISOString()
+  const interactionCount = priorState.interaction_count + 1
+
+  await Promise.all([
+    supabase.from('messages').insert([
+      { user_id: userId, role: 'user', content: userMessage },
+      { user_id: userId, role: 'assistant', content: reply, mood },
+    ]),
+    // upsert, not update: the first-ever turn for a user has no existing
+    // character_state row (spec §9 step 6 seeding deliberately skips it).
+    supabase.from('character_state').upsert(
+      {
+        user_id: userId,
+        mood,
+        energy: computeEnergy(priorState.last_seen_at, priorState.energy),
+        interaction_count: interactionCount,
+        last_seen_at: now,
+        relationship_level: relationshipLevel(interactionCount),
+        streak_days: computeStreak(priorState.last_seen_at, priorState.streak_days),
+      },
+      { onConflict: 'user_id' }
+    ),
+    ...newFacts.map((content) => upsertFact(userId, content)),
+  ])
+}
+```
+
+with:
+
+```ts
+import { computeEnergy, computeStreak } from './relationship.js'
+import type { CharacterState, Mood } from './types.js'
+
+interface SaveTurnInput {
+  userMessage: string
+  reply: string
+  mood: Mood
+  newFacts: string[]
+}
+
+export async function saveTurn(
+  userId: string,
+  priorState: Omit<CharacterState, 'id' | 'user_id'>,
+  { userMessage, reply, mood, newFacts }: SaveTurnInput
+): Promise<void> {
+  const now = new Date().toISOString()
+
+  await Promise.all([
+    supabase.from('messages').insert([
+      { user_id: userId, role: 'user', content: userMessage },
+      { user_id: userId, role: 'assistant', content: reply, mood },
+    ]),
+    // RPC instead of a plain upsert (design doc
+    // docs/superpowers/specs/2026-07-07-byte-v3-character-and-continuity-design.md
+    // §4): interaction_count/relationship_level increment atomically
+    // in Postgres against the row's current value, not a client-side
+    // snapshot -- see supabase/migrations/20260707010000_atomic_character_turn_upsert.sql.
+    supabase.rpc('upsert_character_turn', {
+      p_user_id: userId,
+      p_mood: mood,
+      p_energy: computeEnergy(priorState.last_seen_at, priorState.energy),
+      p_last_seen_at: now,
+      p_streak_days: computeStreak(priorState.last_seen_at, priorState.streak_days),
+    }),
+    ...newFacts.map((content) => upsertFact(userId, content)),
+  ])
+}
+```
+
+- [ ] **Step 4: Add a cross-reference comment to `relationshipLevel` in `api/lib/relationship.ts`**
+
+Replace:
+
+```ts
+export function relationshipLevel(interactionCount: number): 1 | 2 | 3 | 4 {
+  if (interactionCount < 5) return 1 // New
+  if (interactionCount < 20) return 2 // Warming up
+  if (interactionCount < 60) return 3 // Close
+  return 4 // Best friend / partner
+}
+```
+
+with:
+
+```ts
+// Mirrored in supabase/migrations/20260707010000_atomic_character_turn_upsert.sql's
+// upsert_character_turn() CASE expression for atomic writes (design doc
+// docs/superpowers/specs/2026-07-07-byte-v3-character-and-continuity-design.md
+// §4) -- no longer called from the write path (saveTurn in memory-write.ts
+// uses the SQL function instead), kept here as the single TypeScript-side
+// reference for the bucket thresholds. A future threshold change must
+// update both places.
+export function relationshipLevel(interactionCount: number): 1 | 2 | 3 | 4 {
+  if (interactionCount < 5) return 1 // New
+  if (interactionCount < 20) return 2 // Warming up
+  if (interactionCount < 60) return 3 // Close
+  return 4 // Best friend / partner
+}
+```
+
+- [ ] **Step 5: Typecheck and existing tests**
+
+```bash
+npx tsc -b
+npx vitest run
+```
+
+Expected: `tsc -b` prints nothing. `vitest run` -- all existing tests still pass (this task doesn't touch `computeEnergy`/`computeStreak`'s own logic, only how their results are delivered to Postgres, and `relationshipLevel`'s existing behavior/signature is unchanged, only a comment added).
+
+- [ ] **Step 6: Manual verification**
+
+This needs a live Supabase connection with the migration applied (Step 2). Using the test user:
+
+1. Send two real chat messages back-to-back as fast as possible (e.g. two `curl -X POST` requests to `/api/chat?user=<test-user-id>` fired without waiting for the first to finish, simulating near-concurrent devices).
+2. Query `select interaction_count from character_state where user_id = '<test-user-id>';` afterward.
+3. Confirm it increased by exactly 2 from its value before this test, not 1 -- proving the atomic increment doesn't lose a concurrent write the way the old client-computed `priorState.interaction_count + 1` could.
+
+If no live Supabase connection is available, report DONE_WITH_CONCERNS with only `tsc -b`/`vitest run` plus a code-level read-through confirming the RPC call replaces the old upsert correctly.
+
+- [ ] **Step 7: Commit**
+
+```bash
+git add supabase/migrations/20260707010000_atomic_character_turn_upsert.sql api/lib/memory-write.ts api/lib/relationship.ts
+git commit -m "Make interaction_count/relationship_level writes atomic via a Postgres RPC"
+```

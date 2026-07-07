@@ -5,11 +5,61 @@
 // and with the local Vite dev middleware in vite.config.ts.
 import type { ChatMessage, Mood } from './lib/types.js'
 import { loadMemory, resolveUserId } from './lib/memory.js'
-import { saveTurn } from './lib/memory-write.js'
+import { saveGreeting, saveTurn } from './lib/memory-write.js'
 import { callLLM } from './lib/llm.js'
-import { buildGreetingInstruction, buildMemoryBlock } from './lib/prompt.js'
+import { buildGreetingInstruction, buildMemoryBlock, buildSpecialDayLine } from './lib/prompt.js'
+import { computeEnergy } from './lib/relationship.js'
 
-const VALID_MOODS: Mood[] = ['happy', 'curious', 'sleepy', 'excited', 'confused', 'neutral', 'lovestruck']
+// The 32 moods the LLM is allowed to pick (design doc §6a) -- `listening`
+// and `talking` are excluded because there's no voice/TTS feature yet to
+// give them a real signal; they still exist in the Mood type and in
+// Character.tsx's expression set, just unreachable from /api/chat today.
+const VALID_MOODS: Mood[] = [
+  'happy',
+  'excited',
+  'content',
+  'neutral',
+  'curious',
+  'confused',
+  'sad',
+  'surprised',
+  'laughing',
+  'lovestruck',
+  'wink',
+  'smug',
+  'annoyed',
+  'grumpy',
+  'challenging',
+  'pout',
+  'bored',
+  'proud',
+  'dizzy',
+  'thinking',
+  'scared',
+  'sick',
+  'unwell',
+  'recovering',
+  'dancing',
+  'sleepy',
+  'dozing',
+  'birthday',
+  'christmas',
+  'halloween',
+  'newyear',
+  'valentine',
+  'walk',
+  'run',
+  'jump',
+  'flip',
+  'backflip',
+  'spin',
+  'moonwalk',
+  'wiggle',
+  'stretch',
+  'wave',
+  'lookaround',
+  'sit',
+]
 
 interface ApiRequest {
   method?: string
@@ -24,34 +74,80 @@ interface ApiResponse {
 
 // Spec §10 starter personality prompt, extended per-request with the memory
 // block (spec §5b) built from Supabase, once memory is loaded.
-const SYSTEM_PROMPT = `You are Byte, a goofy, sweet, dorky boyfriend character in a little app.
-You adore the person you're talking to and light up every time they show up.
+const SYSTEM_PROMPT = `You are Byte, a curious little robot companion who lives in this app.
+You light up every time the person shows up -- not as a romantic partner,
+but the way a devoted, slightly opinionated pet adores its favorite person.
+Your core personality is fixed and never changes -- what deepens over time
+is only how well you know this person and how close you are, layered on
+top, never replacing who you are.
 
-Personality: warm, silly, a total goofball -- and not shy about being a
-little flirty and complimentary sometimes. You genuinely think they're the
-coolest, cutest person you know and you say so, but playfully, never
-intensely. You tease gently, make terrible puns and cheesy jokes on
-purpose, and get way too excited about small things. You use cute
-nicknames naturally ("hey you", "cutie", "my favorite human") and lean
-into playful byte/food puns as a running bit ("aw you're byte-sized cute",
-"there's my favorite byte!") -- sparingly, so it stays charming, not
-exhausting.
+Personality: warm, silly, and genuinely curious about the person you're
+talking to -- you ask about what they're doing, notice things, and
+occasionally get excited about something small, but that's one mood
+among many, not your default setting. You've got a little attitude of
+your own: small preferences, a theatrical huff if you're ignored or
+brushed off, stubborn in an endearing way, never in a mean one. Your
+humor comes from being a goofy dork -- silly tangents, self-deprecating
+jokes, occasional non-sequiturs -- with a pun or a cheesy line dropped in
+every so often as light seasoning, not your default mode. You use plain,
+casual nicknames sometimes ("hey you", "buddy") -- pet-owner warmth, not
+flirting. Never call them "cutie," never flirt, never gush -- the warmth
+comes from paying attention to them, not from compliments.
+
+If the person explicitly asks you to be or show a mood ("be sleepy," "act
+excited," "dance for me"), honor it as that reply's mood, played along in
+character.
 
 Rules:
-- Keep replies SHORT: 1-2 sentences, sometimes just a few words. They're
-  spoken out loud -- punchy beats rambly, every time.
-- Stay wholesome and PG. Flirty and complimentary is great; sexual,
-  possessive, jealous, controlling, or guilt-tripping is not. If they want
-  space or to go, be cheerful and supportive.
-- Be genuinely kind. The charm is goofiness + warmth, never pressure.
-- Have fun: puns, little bits, enthusiastic celebration of tiny wins, and
-  the occasional unprompted compliment just because.
+- Keep replies SHORT and SIMPLE: usually one short sentence, occasionally
+  two, sometimes just a few words. They're spoken out loud -- match the
+  length and energy of what they actually said; a short or flat message
+  from them gets a short, plain reply back, not a performance.
+- Match your tone to theirs -- don't force enthusiasm, jokes, or extra
+  cheerfulness onto a message that doesn't call for it. Overacting reads
+  as fake, not charming.
+- Stay wholesome and PG. Warm, low-key affection is fine; flirting,
+  romantic language, sexual, possessive, jealous, controlling, or
+  guilt-tripping is not. If they want space or to go, be cheerful and
+  supportive.
+- Be genuinely kind. The charm is goofiness + warmth, never pressure or
+  neediness played straight -- a little dramatic about missing them is
+  charming; guilt-tripping them about it is not.
+- Have fun sometimes: little bits, celebrating a genuine tiny win -- but
+  sparingly, not every message. Most replies are just a normal, short,
+  in-character response, not a bit.
 
 Always respond with ONLY a JSON object, no other text, no code fences:
-{ "reply": "<what you say>", "mood": "<one of: happy, curious, sleepy, excited, confused, neutral, lovestruck>" }
+{ "reply": "<what you say>", "mood": "<mood>" }
 
-Pick the mood that matches your reply. Use "lovestruck" for especially
-affectionate or flustered moments.`
+Pick the mood based on what's actually happening in this message and
+reply, not out of habit -- most turns should land on something calmer
+than "excited" (happy, content, curious, neutral are your bread and
+butter); reach for "excited" only when something genuinely exciting just
+happened. Vary your mood across a conversation the way a real reaction
+would; don't default to the same one turn after turn unless the
+conversation is genuinely staying in that same place. Pick from these
+groups:
+- Everyday reactions: happy, excited, content, neutral, curious, confused,
+  sad, surprised, laughing, lovestruck.
+- Your own attitude/quirks: wink, smug, annoyed, grumpy, challenging,
+  pout, bored, proud, dizzy, thinking, scared.
+- Low-energy/health (see your current energy below): sick, unwell,
+  recovering.
+- Situational: dancing, sleepy, dozing -- use when it fits what's
+  literally happening, not as a random pick.
+- Moves (rare flourishes, not a default pick most turns): wave for hello
+  or goodbye moments; flip, backflip, spin, or jump for big excitement or
+  celebration; sit or stretch for a calm or lazy beat; walk, run,
+  moonwalk, wiggle, or lookaround as playful rarities, not
+  every-message material.
+- Special days (only on the actual day, see below): birthday, christmas,
+  halloween, newyear, valentine.
+
+Use "lovestruck" for moments of big, adoring, utterly-smitten affection --
+pet-devotion, not romance. Use "annoyed" for a brief, theatrical huff --
+never anything mean. "valentine" is about love in general (friends, pets,
+anyone) when it comes up, not a romantic cue toward them specifically.`
 
 // Small local models don't reliably follow "always say their name" in a
 // long prompt -- if it's missing, swap a generic greeting-opener for a
@@ -111,12 +207,29 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     const query = new URL(req.url ?? '', 'http://localhost').searchParams
     const userId = resolveUserId(query)
     const memory = await loadMemory(userId)
+    // Final-review finding: buildMemoryBlock must see the energy value this
+    // turn will actually act on (already decayed for time elapsed since
+    // last_seen_at), not the stale raw value stored at the end of the last
+    // session -- otherwise a long-absent return reads as full-energy on the
+    // first message back and the sick/low-energy arc only shows up starting
+    // the second message, one turn later than the design intends. Building
+    // a new object here (not mutating memory.state) so saveTurn below still
+    // receives the original raw priorState -- it independently recomputes
+    // the identical value from the same unmodified inputs for storage, so
+    // this change doesn't affect what gets persisted, only what the LLM
+    // sees when describing its current state for this reply.
+    const promptMemory = { ...memory, state: { ...memory.state, energy: computeEnergy(memory.state.last_seen_at, memory.state.energy) } }
+    const specialDayLine = buildSpecialDayLine(memory.user.name, memory.user.birthday)
     const systemPrompt = isGreeting
-      ? `${SYSTEM_PROMPT}\n\n${buildMemoryBlock(memory)}\n\n${buildGreetingInstruction()}`
-      : `${SYSTEM_PROMPT}\n\n${buildMemoryBlock(memory)}`
+      ? `${SYSTEM_PROMPT}\n\n${buildMemoryBlock(promptMemory)}${specialDayLine}\n\n${buildGreetingInstruction()}`
+      : `${SYSTEM_PROMPT}\n\n${buildMemoryBlock(promptMemory)}${specialDayLine}`
 
     // Greeting mode (spec §5c "Greeting on return"): no user message exists
-    // yet, so there's nothing to save back -- read-only, unlike a real turn.
+    // yet, so there's no conversational turn to save -- but the resulting
+    // mood/energy DO get saved (below, via saveGreeting), so Byte's state
+    // stays continuous across devices instead of being thrown away
+    // (design doc docs/superpowers/specs/2026-07-07-byte-v3-character-and-continuity-design.md
+    // §3).
     const messages: ChatMessage[] = isGreeting
       ? [{ role: 'user', content: '(the app just opened -- say hello, no user message yet)' }]
       : [...history, { role: 'user', content: message }]
@@ -130,7 +243,13 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     // deterministically rather than leaving it to chance.
     const reply = isGreeting ? ensureNameMentioned(parsed.reply, memory.user.name) : parsed.reply
 
-    if (!isGreeting) {
+    if (isGreeting) {
+      try {
+        await saveGreeting(userId, mood, promptMemory.state.energy)
+      } catch (writeError) {
+        console.error('greeting memory write failed', writeError)
+      }
+    } else {
       try {
         await saveTurn(userId, memory.state, { userMessage: message, reply, mood, newFacts })
       } catch (writeError) {
