@@ -2,7 +2,7 @@
 // 3). Called best-effort from chat.ts -- a failure here must never turn a
 // successful LLM reply into a 500 for the browser.
 import { supabase } from './supabase.js'
-import { computeEnergy, computeStreak } from './relationship.js'
+import { canCatchCold, computeEnergy, computeStreak, newMilestones, relationshipLevel } from './relationship.js'
 import type { CharacterState, Mood } from './types.js'
 
 interface SaveTurnInput {
@@ -10,14 +10,31 @@ interface SaveTurnInput {
   reply: string
   mood: Mood
   newFacts: string[]
+  personalityNotes: string | null
 }
 
 export async function saveTurn(
   userId: string,
   priorState: Omit<CharacterState, 'id' | 'user_id'>,
-  { userMessage, reply, mood, newFacts }: SaveTurnInput
+  { userMessage, reply, mood, newFacts, personalityNotes }: SaveTurnInput
 ): Promise<void> {
   const now = new Date().toISOString()
+  // §5: a cold's onset is the turn mood first lands on "sick" -- only stamps
+  // last_cold_at when the rate-limit actually allowed it, so a model that
+  // (incorrectly) picks "sick" again mid-cooldown doesn't push the cooldown
+  // out further.
+  const coldOnset = mood === 'sick' && canCatchCold(priorState.last_cold_at)
+  const nextInteractionCount = priorState.interaction_count + 1
+  const nextStreakDays = computeStreak(priorState.last_seen_at, priorState.streak_days)
+  const nextRelationshipLevel = relationshipLevel(nextInteractionCount)
+  // Recomputed independently from the same unmodified priorState chat.ts
+  // used to predict signals for the prompt -- same split as computeEnergy's,
+  // so this doesn't depend on (or duplicate) what the prompt-building code did.
+  const milestonesToAdd = newMilestones(
+    { interactionCount: priorState.interaction_count, streakDays: priorState.streak_days, relationshipLevel: priorState.relationship_level },
+    { interactionCount: nextInteractionCount, streakDays: nextStreakDays, relationshipLevel: nextRelationshipLevel },
+    priorState.milestones
+  )
 
   await Promise.all([
     supabase.from('messages').insert([
@@ -34,7 +51,10 @@ export async function saveTurn(
       p_mood: mood,
       p_energy: computeEnergy(priorState.last_seen_at, priorState.energy),
       p_last_seen_at: now,
-      p_streak_days: computeStreak(priorState.last_seen_at, priorState.streak_days),
+      p_streak_days: nextStreakDays,
+      p_cold_onset: coldOnset,
+      p_new_milestones: milestonesToAdd,
+      p_personality_notes: personalityNotes ?? priorState.personality_notes ?? '',
     }),
     ...newFacts.map((content) => upsertFact(userId, content)),
   ])
@@ -61,8 +81,9 @@ async function upsertFact(userId: string, content: string): Promise<void> {
 // Design doc docs/superpowers/specs/2026-07-07-byte-v3-character-and-continuity-design.md
 // §3: closes the greeting path's previous read-only behavior. Unlike
 // saveTurn, this deliberately touches ONLY mood/energy -- never
-// interaction_count/relationship_level/streak_days/last_seen_at. Opening
-// the app is Byte noticing you're there, not a conversation; the
+// interaction_count/relationship_level/streak_days/last_seen_at/
+// personality_notes/milestones. Opening the app is Byte noticing you're
+// there, not a conversation; the
 // relationship must only deepen from a real back-and-forth turn. For a
 // brand-new user with no character_state row yet, the INSERT path falls
 // back to the table's own column defaults (relationship_level 1,

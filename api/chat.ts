@@ -8,7 +8,7 @@ import { loadMemory, resolveUserId, toChatHistory } from './lib/memory.js'
 import { saveGreeting, saveTurn } from './lib/memory-write.js'
 import { callLLM } from './lib/llm.js'
 import { buildGreetingInstruction, buildMemoryBlock, buildOutputFormatInstructions, buildSpecialDayLine } from './lib/prompt.js'
-import { computeEnergy } from './lib/relationship.js'
+import { canCatchCold, computeEnergy, computeStreak, newMilestones, relationshipLevel } from './lib/relationship.js'
 import { SELECTABLE_MOODS } from './lib/moods.js'
 import { loadActiveBasePersonality } from './lib/personality.js'
 
@@ -39,17 +39,21 @@ function stripCodeFences(text: string): string {
   return fenced ? fenced[1] : text
 }
 
-function parseModelOutput(rawText: string): { reply: string; mood: Mood; newFacts: string[] } {
+function parseModelOutput(
+  rawText: string,
+  fallbackPersonalityNotes: string | null
+): { reply: string; mood: Mood; newFacts: string[]; personalityNotes: string | null } {
   try {
     const parsed = JSON.parse(stripCodeFences(rawText).trim())
     const reply = typeof parsed.reply === 'string' ? parsed.reply : null
     const mood = SELECTABLE_MOODS.includes(parsed.mood) ? (parsed.mood as Mood) : 'neutral'
     const newFacts = Array.isArray(parsed.new_facts) ? parsed.new_facts.filter((f: unknown) => typeof f === 'string') : []
+    const personalityNotes = typeof parsed.personality_notes === 'string' ? parsed.personality_notes : fallbackPersonalityNotes
     if (reply === null) throw new Error('missing reply field')
-    return { reply, mood, newFacts }
+    return { reply, mood, newFacts, personalityNotes }
   } catch {
     // Spec §5: fall back to neutral mood + raw text if parsing fails.
-    return { reply: rawText, mood: 'neutral', newFacts: [] }
+    return { reply: rawText, mood: 'neutral', newFacts: [], personalityNotes: fallbackPersonalityNotes }
   }
 }
 
@@ -85,11 +89,23 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     // sees when describing its current state for this reply.
     const promptMemory = { ...memory, state: { ...memory.state, energy: computeEnergy(memory.state.last_seen_at, memory.state.energy) } }
     const specialDayLine = buildSpecialDayLine(memory.user.name, memory.user.birthday)
+    const coldAvailable = canCatchCold(memory.state.last_cold_at)
+    const predictedInteractionCount = memory.state.interaction_count + 1
+    const predictedStreakDays = computeStreak(memory.state.last_seen_at, memory.state.streak_days)
+    const predictedRelationshipLevel = relationshipLevel(predictedInteractionCount)
+    const crossedMilestones = isGreeting
+      ? []
+      : newMilestones(
+          { interactionCount: memory.state.interaction_count, streakDays: memory.state.streak_days, relationshipLevel: memory.state.relationship_level },
+          { interactionCount: predictedInteractionCount, streakDays: predictedStreakDays, relationshipLevel: predictedRelationshipLevel },
+          memory.state.milestones
+        )
+    const signals = { coldAvailable, newMilestone: crossedMilestones[0] ?? null }
     // Assembly order per docs/byte-base-personality.md §10: fixed soul, then
     // the evolving memory block, then mechanical output-format instructions.
     const systemPrompt = isGreeting
-      ? `${basePersonality}\n\n${buildMemoryBlock(promptMemory)}${specialDayLine}\n\n${buildGreetingInstruction()}\n\n${buildOutputFormatInstructions()}`
-      : `${basePersonality}\n\n${buildMemoryBlock(promptMemory)}${specialDayLine}\n\n${buildOutputFormatInstructions()}`
+      ? `${basePersonality}\n\n${buildMemoryBlock(promptMemory, signals)}${specialDayLine}\n\n${buildGreetingInstruction()}\n\n${buildOutputFormatInstructions()}`
+      : `${basePersonality}\n\n${buildMemoryBlock(promptMemory, signals)}${specialDayLine}\n\n${buildOutputFormatInstructions()}`
 
     // Greeting mode (spec §5c "Greeting on return"): no user message exists
     // yet, so there's no conversational turn to save -- but the resulting
@@ -103,8 +119,8 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     // Single call: new_facts (spec §5b) is parsed out of this same JSON
     // response below, not a second round-trip.
     const rawText = await callLLM(systemPrompt, messages)
-    const parsed = parseModelOutput(rawText)
-    const { mood, newFacts } = parsed
+    const parsed = parseModelOutput(rawText, memory.state.personality_notes)
+    const { mood, newFacts, personalityNotes } = parsed
     // The greeting prompt asks the model to always use the person's name,
     // but small local models don't reliably follow that -- guarantee it
     // deterministically rather than leaving it to chance.
@@ -118,7 +134,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       }
     } else {
       try {
-        await saveTurn(userId, memory.state, { userMessage: message, reply, mood, newFacts })
+        await saveTurn(userId, memory.state, { userMessage: message, reply, mood, newFacts, personalityNotes })
       } catch (writeError) {
         // Best-effort (spec §9 step 8 / api-docs endpoints.md): a write
         // failure must not turn a successful reply into a 500 for the user.
