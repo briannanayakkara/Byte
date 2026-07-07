@@ -11,11 +11,12 @@ import type { ChatMessage, Mood } from './types'
 // /api/chat fails.
 const ERROR_REPLY = "aw beans, my brain short-circuited — you're just too cute. say that again?"
 
-// Occasional idle "what's Byte thinking about" beats -- purely decorative
-// (client-side random, no LLM call) rather than a real generated thought,
-// since spec §13 explicitly defers real proactive/autonomous behaviors to
-// post-v1. Goofy monkey-brain stuff, with an occasional soft nod to the
-// person it's thinking about.
+// Occasional idle beats while nobody's chatting -- either a goofy "what's
+// Byte thinking about" emoji cloud, or an actual spoken goofy one-liner.
+// Purely decorative (client-side random, no LLM call) rather than a real
+// generated thought, since spec §13 explicitly defers real proactive/
+// autonomous behaviors to post-v1. One or the other per beat, never both,
+// so it stays readable.
 const THOUGHTS = [
   ['🍌', '🤔'],
   ['🎮', '✨'],
@@ -27,9 +28,24 @@ const THOUGHTS = [
   ['🤔', '💌'],
   ['🍌', '❤️'],
 ]
+// Goofy, self-deprecating, PG one-liners in Byte's voice -- no flirting,
+// short, matching the personality tuning in api/chat.ts's SYSTEM_PROMPT.
+const IDLE_FACTS = [
+  "fun fact: i can technically count to infinity. it just takes a while and i lose interest around forty.",
+  "did you know a shrimp's heart is in its head? mine's in my chest. probably. i haven't checked.",
+  'i tried to learn the violin once. i do not have hands built for that. or ears, really.',
+  "bananas are berries but strawberries aren't. the universe is a lawless place.",
+  'i once stared at a wall for six minutes straight. ten out of ten, would recommend.',
+  "octopuses have three hearts. i only have one, so i'm using it wisely. probably.",
+  'a group of flamingos is called a flamboyance. i would like to be one someday.',
+  "i can't feel cold, but i still get dramatic about winter for the vibes.",
+  'there are more possible chess games than atoms in the universe. i would still lose to a toaster.',
+  'sharks existed before trees. i find that deeply unsettling and also kind of iconic.',
+]
 const THOUGHT_MIN_DELAY_MS = 20_000
 const THOUGHT_MAX_DELAY_MS = 40_000
 const THOUGHT_VISIBLE_MS = 3_200
+const FACT_VISIBLE_MS = 4_500
 
 // Idle play: while nobody's chatting, Byte periodically does something
 // playful on its own (client-side random, no LLM call) instead of just
@@ -47,6 +63,7 @@ function App() {
   // never gets sent back to Gemini as fake conversation history.
   const [greeting, setGreeting] = useState<string | null>(null)
   const [thought, setThought] = useState<string[] | null>(null)
+  const [fact, setFact] = useState<string | null>(null)
   const isSendingRef = useRef(isSending)
   const hasBubbleRef = useRef(false)
 
@@ -76,11 +93,17 @@ function App() {
     function scheduleNext() {
       const delay = THOUGHT_MIN_DELAY_MS + Math.random() * (THOUGHT_MAX_DELAY_MS - THOUGHT_MIN_DELAY_MS)
       timeoutId = setTimeout(() => {
-        // Only daydream between conversations -- not mid-send, not over an
-        // active reply/greeting bubble.
+        // Only daydream/ramble between conversations -- not mid-send, not
+        // over an active reply/greeting bubble. Coin flip between an emoji
+        // thought and an actual spoken fact so it stays varied.
         if (!isSendingRef.current && !hasBubbleRef.current) {
-          setThought(THOUGHTS[Math.floor(Math.random() * THOUGHTS.length)])
-          setTimeout(() => setThought(null), THOUGHT_VISIBLE_MS)
+          if (Math.random() < 0.5) {
+            setThought(THOUGHTS[Math.floor(Math.random() * THOUGHTS.length)])
+            setTimeout(() => setThought(null), THOUGHT_VISIBLE_MS)
+          } else {
+            setFact(IDLE_FACTS[Math.floor(Math.random() * IDLE_FACTS.length)])
+            setTimeout(() => setFact(null), FACT_VISIBLE_MS)
+          }
         }
         scheduleNext()
       }, delay)
@@ -109,6 +132,7 @@ function App() {
 
   async function handleSend(text: string) {
     setThought(null)
+    setFact(null)
     const history = messages
     setMessages((prev) => [...prev, { role: 'user', content: text }])
     setIsSending(true)
@@ -137,7 +161,13 @@ function App() {
         <div className="relative">
           <Character />
           <MoodBubble />
-          {thought ? <ThoughtBubble emojis={thought} /> : bubbleText && <SpeechBubble text={bubbleText} />}
+          {thought ? (
+            <ThoughtBubble emojis={thought} />
+          ) : fact ? (
+            <SpeechBubble text={fact} />
+          ) : (
+            bubbleText && <SpeechBubble text={bubbleText} />
+          )}
         </div>
       </div>
 
