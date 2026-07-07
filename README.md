@@ -1,4 +1,8 @@
-# React + TypeScript + Vite
+# Byte
+
+A goofy AI companion character in the browser. See `docs/specs/Byte-app-spec.md` for the full spec.
+
+## Dev setup
 
 This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
 
