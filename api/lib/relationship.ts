@@ -2,6 +2,11 @@
 // levels" and "streak tracking" §9 step 9), kept independently testable per
 // query-patterns.md.
 
+const ENERGY_FULL_HOURS = 6 // no decay at all within this window since last contact
+const ENERGY_FLOOR_HOURS = 72 // 3 days -- fully decayed to the floor by this point
+const ENERGY_FLOOR = 30 // never drops below this -- EMO gets bored, it doesn't shut down
+const ENERGY_INTERACTION_BUMP = 8 // added on every new turn, capped at 100
+
 export function relationshipLevel(interactionCount: number): 1 | 2 | 3 | 4 {
   if (interactionCount < 5) return 1 // New
   if (interactionCount < 20) return 2 // Warming up
@@ -30,4 +35,31 @@ export function computeStreak(lastSeenAt: string | null, currentStreak: number, 
   yesterday.setUTCDate(yesterday.getUTCDate() - 1)
 
   return lastKey === utcDateKey(yesterday.toISOString()) ? currentStreak + 1 : 1
+}
+
+// Time-based mood mechanic (design doc
+// docs/superpowers/specs/2026-07-07-emo-personality-retune-design.md §3):
+// energy decays toward ENERGY_FLOOR the longer it's been since last_seen_at,
+// then every new interaction nudges it back up. Since last_seen_at is
+// updated to `now` on every turn (memory-write.ts), consecutive messages in
+// one sitting see ~0 elapsed time (no decay) and just climb by the bump
+// each turn -- so a long-absent return arrives low and recovers gradually
+// over the conversation instead of snapping to full on the first message.
+// Also drives the sick/unwell/recovering health arc via prompt guidance
+// (design doc §7) -- no separate illness state needed.
+export function computeEnergy(lastSeenAt: string | null, priorEnergy: number, now: Date = new Date()): number {
+  if (lastSeenAt === null) return 100
+
+  const hoursElapsed = (now.getTime() - new Date(lastSeenAt).getTime()) / 3_600_000
+  let decayed: number
+  if (hoursElapsed <= ENERGY_FULL_HOURS) {
+    decayed = priorEnergy
+  } else if (hoursElapsed >= ENERGY_FLOOR_HOURS) {
+    decayed = ENERGY_FLOOR
+  } else {
+    const progress = (hoursElapsed - ENERGY_FULL_HOURS) / (ENERGY_FLOOR_HOURS - ENERGY_FULL_HOURS)
+    decayed = priorEnergy - progress * (priorEnergy - ENERGY_FLOOR)
+  }
+
+  return Math.min(100, decayed + ENERGY_INTERACTION_BUMP)
 }
