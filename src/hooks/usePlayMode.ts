@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { fetchPlayFact } from '../lib/chatApi'
 import type { Mood } from '../types'
 
@@ -73,6 +73,13 @@ export function usePlayMode(): UsePlayModeResult {
       timeoutRef.current = setTimeout(playNext, activity.durationMs)
     }
     playNext()
+  }, [])
+
+  useEffect(() => {
+    return () => {
+      activeRef.current = false
+      if (timeoutRef.current) clearTimeout(timeoutRef.current)
+    }
   }, [])
 
   return { isPlaying, fact, start, stop }
