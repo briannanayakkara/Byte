@@ -4,6 +4,7 @@ import { ChatInput } from './components/ChatInput'
 import { MoodBubble } from './components/MoodBubble'
 import { SpeechBubble } from './components/SpeechBubble'
 import { ThoughtBubble } from './components/ThoughtBubble'
+import { usePlayMode } from './hooks/usePlayMode'
 import { fetchGreeting, sendChatMessage } from './lib/chatApi'
 import type { ChatMessage, Mood } from './types'
 
@@ -67,6 +68,12 @@ function App() {
   const [fact, setFact] = useState<string | null>(null)
   const isSendingRef = useRef(isSending)
   const hasBubbleRef = useRef(false)
+  const playMode = usePlayMode()
+  const isPlayingRef = useRef(false)
+
+  useEffect(() => {
+    isPlayingRef.current = playMode.isPlaying
+  }, [playMode.isPlaying])
 
   useEffect(() => {
     // Design doc §2/§3: wave immediately (a greeting gesture, not an
@@ -97,7 +104,7 @@ function App() {
         // Only daydream/ramble between conversations -- not mid-send, not
         // over an active reply/greeting bubble. Coin flip between an emoji
         // thought and an actual spoken fact so it stays varied.
-        if (!isSendingRef.current && !hasBubbleRef.current) {
+        if (!isSendingRef.current && !hasBubbleRef.current && !isPlayingRef.current) {
           if (Math.random() < 0.5) {
             setThought(THOUGHTS[Math.floor(Math.random() * THOUGHTS.length)])
             setTimeout(() => setThought(null), THOUGHT_VISIBLE_MS)
@@ -121,7 +128,7 @@ function App() {
         // Only play while nothing real is happening -- a reply landing
         // right after would just override the move anyway, so skip it
         // mid-send rather than trigger a pose that's immediately replaced.
-        if (!isSendingRef.current) {
+        if (!isSendingRef.current && !isPlayingRef.current) {
           window.Byte?.set(IDLE_MOVES[Math.floor(Math.random() * IDLE_MOVES.length)])
         }
         scheduleNext()
@@ -132,6 +139,7 @@ function App() {
   }, [])
 
   async function handleSend(text: string) {
+    playMode.stop()
     setThought(null)
     setFact(null)
     setMessages((prev) => [...prev, { role: 'user', content: text }])
@@ -165,6 +173,8 @@ function App() {
             <ThoughtBubble emojis={thought} />
           ) : fact ? (
             <SpeechBubble text={fact} />
+          ) : playMode.fact ? (
+            <SpeechBubble text={playMode.fact} />
           ) : (
             bubbleText && <SpeechBubble text={bubbleText} />
           )}
@@ -172,6 +182,14 @@ function App() {
       </div>
 
       <div className="absolute inset-x-0 bottom-4 flex flex-col items-center gap-3 px-4">
+        <button
+          type="button"
+          onClick={playMode.start}
+          disabled={isSending || playMode.isPlaying}
+          className="rounded-full bg-white/10 px-4 py-1.5 text-xs font-medium text-white/80 transition-colors hover:bg-white/20 disabled:opacity-40"
+        >
+          {playMode.isPlaying ? 'playing...' : 'Go play'}
+        </button>
         <ChatInput onSend={handleSend} disabled={isSending} />
       </div>
     </div>
