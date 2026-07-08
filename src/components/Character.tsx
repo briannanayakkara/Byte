@@ -57,6 +57,9 @@ interface Extra {
   // New for the v4 personality pass: latches so the valentine kiss-blow
   // only spawns one heart per cycle instead of one per frame.
   valentineKiss?: boolean
+  // New for the v5 Play routines: gates the skate wipeout's dust puff to
+  // once per routine cycle instead of every frame while the condition holds.
+  skateDustCycle?: number
 }
 
 interface HeartParticle {
@@ -590,24 +593,31 @@ export function Character() {
         extra.anim = 'sit'
       },
       skate() {
-        screen.append(eye(exL, cyL, 26, 20, 9), eye(exR, cyL, 26, 20, 9))
+        screen.append(elem('circle', { cx: exL, cy: cyL, r: 12, fill: TEAL }), elem('circle', { cx: exR, cy: cyL, r: 12, fill: TEAL }))
+        const o = txt(208, 72, 22, '!', GOLD)
+        o.setAttribute('id', 'oopsT')
+        o.setAttribute('opacity', '0')
+        topFx.append(o)
         extra.blink = true
-        extra.anim = 'walk'
+        extra.anim = 'skate'
       },
       playball() {
-        screen.append(
-          elem('circle', { cx: exL, cy: cyL, r: 12, fill: TEAL }),
-          elem('circle', { cx: exR, cy: cyL, r: 12, fill: TEAL })
-        )
-        extra.anim = 'run'
+        screen.append(elem('circle', { cx: exL, cy: cyL, r: 12, fill: TEAL }), elem('circle', { cx: exR, cy: cyL, r: 12, fill: TEAL }))
+        const o = txt(208, 72, 22, '!', GOLD)
+        o.setAttribute('id', 'oopsT')
+        o.setAttribute('opacity', '0')
+        topFx.append(o)
+        extra.blink = true
+        extra.anim = 'ballP'
       },
       jam() {
-        screen.append(
-          arc(`M${exL - 12} ${cyL} Q${exL} ${cyL + 9} ${exL + 12} ${cyL}`),
-          arc(`M${exR - 12} ${cyL} Q${exR} ${cyL + 9} ${exR + 12} ${cyL}`)
-        )
-        topFx.append(txt(200, 78, 20, '♪', GOLD))
-        extra.dance = true
+        screen.append(arc(`M${exL - 12} ${cyL} Q${exL} ${cyL + 9} ${exL + 12} ${cyL}`), arc(`M${exR - 12} ${cyL} Q${exR} ${cyL + 9} ${exR + 12} ${cyL}`))
+        const o = txt(208, 72, 22, '!', GOLD)
+        o.setAttribute('id', 'oopsT')
+        o.setAttribute('opacity', '0')
+        topFx.append(o)
+        extra.blink = true
+        extra.anim = 'jam'
       },
     }
 
@@ -669,6 +679,12 @@ export function Character() {
       let ballY = 263
       let spk = 1
       let jamOn = false
+      const gait = (w: number, s: number, l: number) => {
+        fL = { dx: Math.sin(w) * s, dy: -Math.max(0, Math.sin(w)) * l }
+        fR = { dx: Math.sin(w + Math.PI) * s, dy: -Math.max(0, Math.sin(w + Math.PI)) * l }
+        hL.dx -= Math.sin(w) * s * 0.45
+        hR.dx += Math.sin(w) * s * 0.45
+      }
       if (extra.shake) {
         ty += Math.sin(t / 45) * 2
         rot += Math.sin(t / 40) * 2
@@ -931,6 +947,457 @@ export function Character() {
         hR.dy += -36 + Math.abs(Math.sin(t / 170)) * 2
         rot = Math.sin(t / 170) * 1
       }
+      if (A === 'skate') {
+        // his signature toy
+        const TT = 13000
+        const p = (t % TT) / TT
+        const cyc = Math.floor(t / TT)
+        rot = 0
+        const stance = (lean: number) => {
+          ty = -13 + Math.sin(t / 300) * 0.8
+          rot = lean
+          rotCy = 250
+          fL = { dx: 20, dy: -8 }
+          fR = { dx: -20, dy: -8 }
+          hL = { dx: -12, dy: -9 + Math.sin(t / 400) * 1.5 }
+          hR = { dx: 12, dy: -9 + Math.sin(t / 400 + 1) * 1.5 }
+        }
+        if (p < 0.14) {
+          if (cyc === 0) {
+            tx = kf(p, [
+              [0, 0],
+              [0.11, -64],
+              [0.14, -64],
+            ])
+            face = -1
+            if (p < 0.11) {
+              gait(t / 140, 10, 10)
+              ty = -Math.abs(Math.sin(t / 140)) * 3
+            } else {
+              const q = (p - 0.11) / 0.03
+              ty = kf(p, [
+                [0.11, 0],
+                [0.122, -20],
+                [0.14, -13],
+              ])
+              fL = { dx: 20 * q, dy: -8 * q }
+              fR = { dx: -20 * q, dy: -8 * q }
+              hL = { dx: -12 * q, dy: -9 * q }
+              hR = { dx: 12 * q, dy: -9 * q }
+            }
+          } else {
+            tx = -64
+            face = 1
+            stance(Math.sin(t / 500) * 2)
+          }
+        } else if (p < 0.34) {
+          tx = kf(p, [
+            [0.14, -64],
+            [0.34, 72],
+          ])
+          face = 1
+          stance(4)
+          if (p < 0.21) {
+            const pp = (p - 0.14) / 0.07
+            fR = { dx: -12 + Math.sin(pp * 12.6) * 12, dy: 13 }
+          }
+        } else if (p < 0.38) {
+          tx = 72
+          face = p < 0.36 ? 1 : -1
+          stance(0)
+          ty = kf(p, [
+            [0.34, -13],
+            [0.36, -21],
+            [0.38, -13],
+          ])
+        } else if (p < 0.58) {
+          tx = kf(p, [
+            [0.38, 72],
+            [0.58, -30],
+          ])
+          face = -1
+          stance(4)
+        } else if (p < 0.64) {
+          tx = -30
+          face = -1
+          stance(0)
+          rot =
+            Math.sin(t / 55) *
+            kf(p, [
+              [0.58, 2],
+              [0.64, 11],
+            ])
+          hL = { dx: -10 + Math.cos(t / 60) * 11, dy: -14 + Math.sin(t / 60) * 11 }
+          hR = { dx: 10 + Math.cos(t / 60 + 2) * 11, dy: -14 + Math.sin(t / 60 + 2) * 11 }
+        } else if (p < 0.7) {
+          tx = -26
+          face = -1
+          ty = kf(p, [
+            [0.64, -13],
+            [0.66, -24],
+            [0.7, 26],
+          ])
+          const q = Math.max(0, Math.min(1, (p - 0.66) / 0.04))
+          fL = { dx: -18 * q, dy: -6 - 20 * q * q }
+          fR = { dx: 18 * q, dy: -6 - 20 * q * q }
+          hL = {
+            dx: -6,
+            dy: kf(p, [
+              [0.64, -14],
+              [0.7, 18],
+            ]),
+          }
+          hR = {
+            dx: 6,
+            dy: kf(p, [
+              [0.64, -14],
+              [0.7, 18],
+            ]),
+          }
+          if (p > 0.695 && extra.skateDustCycle !== cyc) {
+            extra.skateDustCycle = cyc
+            dust(160 + tx)
+          }
+        } else if (p < 0.8) {
+          tx = -26
+          face = -1
+          ty = 26 + Math.sin(t / 600) * 0.8
+          fL = { dx: -18, dy: -26 }
+          fR = { dx: 18, dy: -26 }
+          hL = { dx: -4, dy: 18 }
+          hR = { dx: 4, dy: 18 }
+          headAdd +=
+            Math.sin(t / 170) *
+            8 *
+            kf(p, [
+              [0.7, 1],
+              [0.8, 0],
+            ])
+        } else if (p < 0.92) {
+          face = -1
+          ty = kf(p, [
+            [0.8, 26],
+            [0.84, 0],
+            [0.92, 0],
+          ])
+          tx = kf(p, [
+            [0.8, -26],
+            [0.84, -26],
+            [0.92, -76],
+          ])
+          if (p > 0.84) {
+            gait(t / 150, 9, 9)
+          } else {
+            const gq = Math.min(1, (p - 0.8) / 0.04)
+            fL = { dx: -18 * (1 - gq), dy: -26 * (1 - gq) }
+            fR = { dx: 18 * (1 - gq), dy: -26 * (1 - gq) }
+          }
+        } else {
+          tx = kf(p, [
+            [0.92, -76],
+            [0.96, -76],
+            [1, -64],
+          ])
+          face = 1
+          ty = kf(p, [
+            [0.92, 0],
+            [0.94, -18],
+            [0.96, -13],
+            [1, -13],
+          ])
+          const q = Math.min(1, (p - 0.92) / 0.03)
+          fL = { dx: 20 * q, dy: -8 * q }
+          fR = { dx: -20 * q, dy: -8 * q }
+          hL = { dx: -12, dy: -9 }
+          hR = { dx: 12, dy: -9 }
+          rot = 0
+        }
+        bdX = cyc === 0 && p < 0.11 ? 84 : p < 0.64 ? 160 + tx - 12 : p < 0.7 ? kf(p, [[0.64, 118], [0.7, 72]]) : p < 0.92 ? 72 : 160 + tx - 12
+        bdRot = kf(p, [
+          [0, 0],
+          [0.64, 0],
+          [0.7, -360],
+          [1, -360],
+        ])
+        const oo = svg?.querySelector<SVGTextElement>('#oopsT')
+        if (oo)
+          oo.setAttribute(
+            'opacity',
+            kf(p, [
+              [0.6, 0],
+              [0.615, 1],
+              [0.7, 1],
+              [0.75, 0],
+            ]).toFixed(2)
+          )
+      }
+      if (A === 'ballP') {
+        // kick, chase... bonk
+        const TT = 10000
+        const p = (t % TT) / TT
+        tx = kf(p, [
+          [0, 0],
+          [0.09, 64],
+          [0.13, 64],
+          [0.16, 58],
+          [0.4, -46],
+          [0.425, -56],
+          [0.46, -52],
+          [0.52, -52],
+          [0.575, -44],
+          [0.72, 20],
+          [0.88, 20],
+          [1, 0],
+        ])
+        face = p < 0.13 || (p >= 0.52 && p < 0.88) ? 1 : -1
+        if (p < 0.09) {
+          gait(t / 95, 12, 12)
+          ty = -Math.abs(Math.sin(t / 95)) * 5
+          rot = 5
+        } else if (p < 0.13) {
+          rot = kf(p, [
+            [0.09, 0],
+            [0.11, -5],
+            [0.13, 2],
+          ])
+          fR = {
+            dx: kf(p, [
+              [0.09, -10],
+              [0.112, 30],
+              [0.13, 0],
+            ]),
+            dy: kf(p, [
+              [0.09, 0],
+              [0.112, -12],
+              [0.13, 0],
+            ]),
+          }
+          hL = { dx: -8, dy: -14 }
+          hR = { dx: 8, dy: -10 }
+        } else if (p < 0.4) {
+          gait(t / 110, 11, 11)
+          ty = -Math.abs(Math.sin(t / 110)) * 4
+          rot = 4
+        } else if (p < 0.46) {
+          rot = kf(p, [
+            [0.4, 0],
+            [0.425, 17],
+            [0.445, -6],
+            [0.46, 0],
+          ])
+          rotCy = 252
+          fR = {
+            dx: kf(p, [
+              [0.4, -10],
+              [0.42, 32],
+              [0.46, 0],
+            ]),
+            dy: kf(p, [
+              [0.4, 0],
+              [0.42, -12],
+              [0.46, 0],
+            ]),
+          }
+          hL = { dx: -10, dy: -16 }
+          hR = { dx: 10, dy: -12 }
+        } else if (p < 0.52) {
+          headAdd += 6
+          hR = { dx: -6, dy: -10 }
+        } else if (p < 0.575) {
+          rot = kf(p, [
+            [0.52, 0],
+            [0.545, -5],
+            [0.56, 3],
+            [0.575, 0],
+          ])
+          fR = {
+            dx: kf(p, [
+              [0.52, -10],
+              [0.545, 30],
+              [0.575, 0],
+            ]),
+            dy: kf(p, [
+              [0.52, 0],
+              [0.545, -12],
+              [0.575, 0],
+            ]),
+          }
+          hL = { dx: -8, dy: -14 }
+          hR = { dx: 8, dy: -10 }
+        } else if (p < 0.72) {
+          gait(t / 120, 10, 10)
+          ty = -Math.abs(Math.sin(t / 120)) * 3
+          rot = 3
+        } else if (p < 0.75) {
+          ty = kf(p, [
+            [0.72, 0],
+            [0.735, 0],
+            [0.745, 4],
+            [0.75, 2],
+          ])
+          headDy += kf(p, [
+            [0.73, 0],
+            [0.745, 5],
+            [0.75, 3],
+          ])
+        } else if (p < 0.88) {
+          headAdd +=
+            Math.sin(t / 180) *
+            9 *
+            kf(p, [
+              [0.75, 1],
+              [0.88, 0],
+            ])
+          rot =
+            Math.sin(t / 300) *
+            3 *
+            kf(p, [
+              [0.75, 1],
+              [0.88, 0],
+            ])
+          headDy += kf(p, [
+            [0.75, 3],
+            [0.8, 0],
+          ])
+          hL = { dx: -8 + Math.sin(t / 300) * 4, dy: -10 }
+          hR = { dx: 8 - Math.sin(t / 300) * 4, dy: -10 }
+        } else {
+          gait(t / 150, 8, 8)
+          ty = -Math.abs(Math.sin(t / 150)) * 2
+        }
+        ballX = kf(p, [
+          [0, 244],
+          [0.112, 244],
+          [0.13, 244],
+          [0.24, 24],
+          [0.3, 70],
+          [0.36, 104],
+          [0.42, 124],
+          [0.545, 124],
+          [0.575, 150],
+          [0.66, 300],
+          [0.7, 240],
+          [0.735, 186],
+          [0.755, 186],
+          [0.8, 204],
+          [0.95, 244],
+          [1, 244],
+        ])
+        ballY = kf(p, [
+          [0, 263],
+          [0.13, 263],
+          [0.185, 178],
+          [0.24, 220],
+          [0.28, 186],
+          [0.33, 236],
+          [0.375, 214],
+          [0.42, 263],
+          [0.545, 263],
+          [0.6, 150],
+          [0.66, 196],
+          [0.705, 108],
+          [0.735, 84],
+          [0.76, 240],
+          [0.79, 206],
+          [0.83, 263],
+          [0.95, 263],
+        ])
+        const oo = svg?.querySelector<SVGTextElement>('#oopsT')
+        if (oo) {
+          const f1 = kf(p, [
+            [0.405, 0],
+            [0.42, 1],
+            [0.47, 1],
+            [0.505, 0],
+          ])
+          const f2 = kf(p, [
+            [0.73, 0],
+            [0.745, 1],
+            [0.8, 1],
+            [0.84, 0],
+          ])
+          oo.setAttribute('opacity', Math.max(f1, f2).toFixed(2))
+        }
+      }
+      if (A === 'jam') {
+        // DJ soul: press play, groove, spin too hard
+        const TT = 9000
+        const p = (t % TT) / TT
+        const cyc = Math.floor(t / TT)
+        tx = 56
+        face = 1
+        jamOn = cyc > 0 || p > 0.145
+        if (jamOn) spk = 1 + Math.abs(Math.sin(t / 220)) * 0.18
+        if (cyc === 0 && p < 0.1) {
+          tx = kf(p, [
+            [0, 0],
+            [0.1, 56],
+          ])
+          gait(t / 150, 10, 10)
+          ty = -Math.abs(Math.sin(t / 150)) * 3
+          rot = 3
+        } else if (cyc === 0 && p < 0.17) {
+          rot = kf(p, [
+            [0.1, 0],
+            [0.125, 9],
+            [0.15, 9],
+            [0.17, 0],
+          ])
+          rotCy = 258
+          hR = {
+            dx: 8,
+            dy: kf(p, [
+              [0.1, 0],
+              [0.125, 46],
+              [0.15, 42],
+              [0.17, 0],
+            ]),
+          }
+          hL = { dx: 2, dy: 3 }
+        } else if (p < 0.6 || p >= 0.88) {
+          const dw = Math.sin(t / 220)
+          rot = dw * 5
+          ty = -Math.abs(dw) * 6
+          headAdd += Math.sin(t / 220) * 2
+          hL = { dx: -3, dy: dw * 9 - 3 }
+          hR = { dx: 3, dy: -dw * 9 - 3 }
+          fL = { dx: dw * 5, dy: -Math.max(0, dw) * 4 }
+          fR = { dx: -dw * 5, dy: -Math.max(0, -dw) * 4 }
+        } else if (p < 0.7) {
+          const q = (p - 0.6) / 0.1
+          sxb = Math.cos(q * q * 12.6)
+          ty = -3
+          fL = { dx: 0, dy: -3 }
+          fR = { dx: 0, dy: -3 }
+          hL = { dx: -5, dy: -9 }
+          hR = { dx: 5, dy: -9 }
+        } else if (p < 0.88) {
+          rot = Math.sin(t / 300) * 4
+          rotCy = 252
+          headAdd +=
+            Math.sin(t / 230) *
+            8 *
+            kf(p, [
+              [0.7, 1],
+              [0.86, 0],
+            ])
+          hL = { dx: -9 + Math.sin(t / 300) * 5, dy: -10 }
+          hR = { dx: 9 - Math.sin(t / 300) * 5, dy: -10 }
+          fL = { dx: Math.sin(t / 600) * 3, dy: 0 }
+          fR = { dx: Math.sin(t / 600 + 2) * 3, dy: 0 }
+        }
+        const oo = svg?.querySelector<SVGTextElement>('#oopsT')
+        if (oo)
+          oo.setAttribute(
+            'opacity',
+            kf(p, [
+              [0.695, 0],
+              [0.71, 1],
+              [0.78, 1],
+              [0.83, 0],
+            ]).toFixed(2)
+          )
+      }
       // ---- personality body language: every expression mood acts in character ----
       const P = currentMood
       if (P === 'challenging') {
@@ -959,6 +1426,19 @@ export function Character() {
       } else if (P === 'bored') {
         // signature bit: dramatic slump + heavy sigh, hands hang lifeless
         const p = (t % 5200) / 5200
+        if (t > 8600) {
+          setMood(['skate', 'playball', 'jam'][Math.floor(Math.random() * 3)] as Mood)
+          return
+        }
+        if (t > 6600) {
+          headAdd += kf((t - 6600) / 2000, [
+            [0, 0],
+            [0.25, -7],
+            [0.45, -7],
+            [0.62, 7],
+            [1, 7],
+          ])
+        }
         ty =
           6 +
           kf(p, [
