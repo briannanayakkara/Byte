@@ -53,6 +53,7 @@ const MOOD_LABELS: Record<Mood, string> = {
   skate: '🛹 skate',
   playball: '⚽ playball',
   jam: '🎧 jam',
+  poke: '👉 poke',
 }
 
 const VISIBLE_MS = 2500

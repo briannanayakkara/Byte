@@ -60,6 +60,14 @@ interface Extra {
   // New for the v5 Play routines: gates the skate wipeout's dust puff to
   // once per routine cycle instead of every frame while the condition holds.
   skateDustCycle?: number
+  // New for the v5 poke reaction: which of the three variants is playing
+  // (0 tickled, 1 startled hop, 2 annoyed swat), which side he was poked
+  // from, the mood to restore afterward, and a one-shot latch so the
+  // startled-hop's dust puff only spawns once per poke.
+  pokeVariant?: number
+  pokeSide?: number
+  pokeReturnTo?: Mood
+  pokeDustSpawned?: boolean
 }
 
 interface HeartParticle {
@@ -139,6 +147,13 @@ export function Character() {
     let zzz: ZzzParticle[] = []
     let dusts: DustParticle[] = []
     let lastAir = 0
+    let simT = 0
+    let lastTx = 0
+    let interactive = true
+    let pendingPokeVariant = 0
+    let pokeCount = 0
+    let lastPokeTime = -9e9
+    const follow = { on: false, arr: 0 }
 
     function elem(tag: string, attrs: Record<string, string | number>): SVGElement {
       const e = document.createElementNS(NS, tag) as SVGElement
@@ -457,6 +472,25 @@ export function Character() {
         extra.light = DIM
         extra.deepZ = true
       },
+      poke() {
+        if (pendingPokeVariant === 1) {
+          screen.append(elem('circle', { cx: exL, cy: cyL, r: 13, fill: TEAL }), elem('circle', { cx: exR, cy: cyL, r: 13, fill: TEAL }))
+          const o = txt(208, 72, 22, '!', GOLD)
+          o.setAttribute('id', 'oopsT')
+          o.setAttribute('opacity', '0')
+          topFx.append(o)
+        } else if (pendingPokeVariant === 2) {
+          screen.append(
+            elem('path', { d: `M${exL - 13} ${cyL - 6} L${exL + 13} ${cyL - 1}`, stroke: TEAL, 'stroke-width': 6, 'stroke-linecap': 'round' }),
+            eye(exL, cyL + 2, 22, 12, 5),
+            elem('path', { d: `M${exR - 13} ${cyL - 1} L${exR + 13} ${cyL - 6}`, stroke: TEAL, 'stroke-width': 6, 'stroke-linecap': 'round' }),
+            eye(exR, cyL + 2, 22, 12, 5)
+          )
+        } else {
+          screen.append(arc(`M${exL - 12} ${cyL - 4} Q${exL} ${cyL + 8} ${exL + 12} ${cyL - 4}`), arc(`M${exR - 12} ${cyL - 4} Q${exR} ${cyL + 8} ${exR + 12} ${cyL - 4}`))
+          topFx.append(txt(160, 74, 16, 'hehe!', GOLD))
+        }
+      },
       birthday() {
         screen.append(
           arc(`M${exL - 12} ${cyL} Q${exL} ${cyL + 9} ${exL + 12} ${cyL}`),
@@ -624,6 +658,7 @@ export function Character() {
     function setMood(m: Mood) {
       currentMood = m
       t = 0
+      follow.on = false
       clearGroup(screen)
       clearGroup(topFx)
       clearGroup(fx)
@@ -652,11 +687,14 @@ export function Character() {
 
     window.Byte = {
       set: setMood,
-      list: () => Object.keys(M) as Mood[],
+      list: () => (Object.keys(M) as Mood[]).filter((m) => m !== 'poke'),
+      pos: () => 160 + lastTx,
+      poke: (variant?: number) => poke(null, typeof variant === 'number' ? variant : null),
     }
 
     function renderFrame(dt: number) {
       t += dt
+      simT += dt
       const slow = extra.slow ? 1600 : 620
       const amp = currentMood === 'excited' || currentMood === 'dancing' ? 7 : extra.slow ? 1.5 : 3
       let ty = Math.sin(t / slow) * amp
@@ -1423,6 +1461,102 @@ export function Character() {
           hR.dx -= j * 26
           hR.dy += j * 4
         }
+      } else if (P === 'poke') {
+        // poked! three possible reactions
+        const q = Math.min(1, t / 950)
+        const v = extra.pokeVariant ?? 0
+        face = extra.pokeSide ?? 1
+        if (v === 0) {
+          // tickled
+          sxb = 1 + Math.sin(t / 45) * 0.05 * (1 - q)
+          ty = -Math.abs(Math.sin(t / 90)) * 5 * (1 - q)
+          rot = Math.sin(t / 70) * 3 * (1 - q)
+          headAdd += Math.sin(t / 60) * 4 * (1 - q)
+          hL = { dx: -9, dy: 6 }
+          hR = { dx: 9, dy: 6 }
+        } else if (v === 1) {
+          // startled hop
+          ty = kf(q, [
+            [0, 0],
+            [0.18, -26],
+            [0.42, 0],
+            [0.55, -6],
+            [0.68, 0],
+            [1, 0],
+          ])
+          headDy += kf(q, [
+            [0, 0],
+            [0.12, -3],
+            [0.42, 2],
+            [0.6, 0],
+          ])
+          hL = { dx: -16, dy: -30 }
+          hR = { dx: 16, dy: -30 }
+          fL = { dx: -4, dy: 0 }
+          fR = { dx: 4, dy: 0 }
+          if (q > 0.4 && !extra.pokeDustSpawned) {
+            extra.pokeDustSpawned = true
+            dust(160 + lastTx)
+          }
+          const oo = svg?.querySelector<SVGTextElement>('#oopsT')
+          if (oo)
+            oo.setAttribute(
+              'opacity',
+              kf(q, [
+                [0, 0],
+                [0.08, 1],
+                [0.6, 1],
+                [0.82, 0],
+              ]).toFixed(2)
+            )
+        } else {
+          // enough. the swat.
+          rot = kf(q, [
+            [0, 0],
+            [0.25, -6],
+            [0.5, 4],
+            [1, 0],
+          ])
+          rotCy = 252
+          hR = {
+            dx: kf(q, [
+              [0, 8],
+              [0.3, 36],
+              [0.55, -6],
+              [0.85, 10],
+            ]),
+            dy: kf(q, [
+              [0, -8],
+              [0.3, -18],
+              [0.55, -4],
+              [1, -6],
+            ]),
+          }
+          hL = { dx: -10, dy: 2 }
+          fR = {
+            dx: kf(q, [
+              [0.48, 0],
+              [0.6, 7],
+              [0.72, 0],
+            ]),
+            dy: kf(q, [
+              [0.48, 0],
+              [0.6, -9],
+              [0.72, 0],
+            ]),
+          }
+          headAdd += kf(q, [
+            [0, 0],
+            [0.3, 7],
+            [0.7, -3],
+            [1, 0],
+          ])
+        }
+        if (t > 980) {
+          const backTo = extra.pokeReturnTo
+          setMood(backTo && M[backTo] ? backTo : 'neutral')
+          return
+        }
       } else if (P === 'bored') {
         // signature bit: dramatic slump + heavy sigh, hands hang lifeless
         const p = (t % 5200) / 5200
@@ -2036,6 +2170,35 @@ export function Character() {
       }
     }
 
+    function poke(px: number | null, forceVariant: number | null = null) {
+      if (currentMood === 'poke' && t < 380) return
+      const backTo = currentMood === 'poke' ? (extra.pokeReturnTo ?? 'neutral') : currentMood
+      pokeCount = simT - lastPokeTime < 4200 ? pokeCount + 1 : 1
+      lastPokeTime = simT
+      const variant = forceVariant ?? (pokeCount >= 3 ? 2 : Math.floor(Math.random() * 2))
+      pendingPokeVariant = variant
+      const side = px != null && px < 160 + lastTx ? -1 : 1
+      setMood('poke')
+      extra.pokeReturnTo = backTo
+      extra.pokeVariant = variant
+      extra.pokeSide = side
+    }
+
+    const svgPoint = (e: PointerEvent) => {
+      const r = svg.getBoundingClientRect()
+      if (!r.width || !r.height) return null
+      const s = Math.min(r.width / 320, r.height / 300)
+      return { x: (e.clientX - r.left - (r.width - 320 * s) / 2) / s, y: (e.clientY - r.top - (r.height - 300 * s) / 2) / s }
+    }
+    const hitCharacter = (p: { x: number; y: number } | null) => !!p && Math.abs(p.x - (160 + lastTx)) < 62 && p.y > 54 && p.y < 284
+
+    function handlePointerDown(e: PointerEvent) {
+      if (!interactive) return
+      const p = svgPoint(e)
+      if (p && hitCharacter(p)) poke(p.x)
+    }
+    svg.addEventListener('pointerdown', handlePointerDown)
+
     function loop(now: number) {
       const dt = Math.min(50, now - last)
       last = now
@@ -2052,6 +2215,7 @@ export function Character() {
 
     return () => {
       cancelAnimationFrame(rafId)
+      svg.removeEventListener('pointerdown', handlePointerDown)
       delete window.Byte
     }
     // Mount-once: this is the entire lifecycle of the component now that
