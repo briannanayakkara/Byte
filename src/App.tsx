@@ -4,6 +4,7 @@ import { ChatInput } from './components/ChatInput'
 import { MoodBubble } from './components/MoodBubble'
 import { SpeechBubble } from './components/SpeechBubble'
 import { ThoughtBubble } from './components/ThoughtBubble'
+import { usePlayMode } from './hooks/usePlayMode'
 import { fetchGreeting, sendChatMessage } from './lib/chatApi'
 import type { ChatMessage, Mood } from './types'
 
@@ -29,7 +30,8 @@ const THOUGHTS = [
   ['🍌', '❤️'],
 ]
 // Goofy, self-deprecating, PG one-liners in Byte's voice -- no flirting,
-// short, matching the personality tuning in api/chat.ts's SYSTEM_PROMPT.
+// short, matching the personality tuning in personality_base's distilled_prompt
+// (loaded via api/lib/personality.ts, see docs/byte-base-personality.md).
 const IDLE_FACTS = [
   "fun fact: i can technically count to infinity. it just takes a while and i lose interest around forty.",
   "did you know a shrimp's heart is in its head? mine's in my chest. probably. i haven't checked.",
@@ -52,9 +54,15 @@ const FACT_VISIBLE_MS = 4_500
 // standing there, and keeps cycling through moves until the user actually
 // sends something. "wave" is deliberately excluded -- that's reserved for
 // the greeting-on-open moment, not random idling.
-const IDLE_MOVES: Mood[] = ['dancing', 'flip', 'backflip', 'spin', 'jump', 'wiggle', 'stretch', 'lookaround', 'walk', 'run', 'moonwalk', 'sit']
-const IDLE_MOVE_MIN_DELAY_MS = 15_000
-const IDLE_MOVE_MAX_DELAY_MS = 35_000
+//
+// Per docs/byte-base-personality.md §3, "moves are rare flourishes, not
+// defaults" -- calm poses (lookaround/stretch/sit) are weighted heavier
+// than energetic ones here, and the most intense flourishes (backflip,
+// run, jump) are left out of ambient idling entirely (still reachable via
+// an explicit chat request, or during "Go play").
+const IDLE_MOVES: Mood[] = ['lookaround', 'lookaround', 'stretch', 'stretch', 'sit', 'sit', 'wiggle', 'walk', 'moonwalk', 'dancing', 'spin', 'flip']
+const IDLE_MOVE_MIN_DELAY_MS = 30_000
+const IDLE_MOVE_MAX_DELAY_MS = 75_000
 
 function App() {
   const [messages, setMessages] = useState<ChatMessage[]>([])
@@ -66,6 +74,12 @@ function App() {
   const [fact, setFact] = useState<string | null>(null)
   const isSendingRef = useRef(isSending)
   const hasBubbleRef = useRef(false)
+  const playMode = usePlayMode()
+  const isPlayingRef = useRef(false)
+
+  useEffect(() => {
+    isPlayingRef.current = playMode.isPlaying
+  }, [playMode.isPlaying])
 
   useEffect(() => {
     // Design doc §2/§3: wave immediately (a greeting gesture, not an
@@ -96,7 +110,7 @@ function App() {
         // Only daydream/ramble between conversations -- not mid-send, not
         // over an active reply/greeting bubble. Coin flip between an emoji
         // thought and an actual spoken fact so it stays varied.
-        if (!isSendingRef.current && !hasBubbleRef.current) {
+        if (!isSendingRef.current && !hasBubbleRef.current && !isPlayingRef.current) {
           if (Math.random() < 0.5) {
             setThought(THOUGHTS[Math.floor(Math.random() * THOUGHTS.length)])
             setTimeout(() => setThought(null), THOUGHT_VISIBLE_MS)
@@ -120,7 +134,7 @@ function App() {
         // Only play while nothing real is happening -- a reply landing
         // right after would just override the move anyway, so skip it
         // mid-send rather than trigger a pose that's immediately replaced.
-        if (!isSendingRef.current) {
+        if (!isSendingRef.current && !isPlayingRef.current) {
           window.Byte?.set(IDLE_MOVES[Math.floor(Math.random() * IDLE_MOVES.length)])
         }
         scheduleNext()
@@ -131,13 +145,13 @@ function App() {
   }, [])
 
   async function handleSend(text: string) {
+    playMode.stop()
     setThought(null)
     setFact(null)
-    const history = messages
     setMessages((prev) => [...prev, { role: 'user', content: text }])
     setIsSending(true)
     try {
-      const { reply, mood: replyMood } = await sendChatMessage(text, history)
+      const { reply, mood: replyMood } = await sendChatMessage(text)
       setMessages((prev) => [...prev, { role: 'assistant', content: reply }])
       window.Byte?.set(replyMood)
     } catch {
@@ -165,6 +179,8 @@ function App() {
             <ThoughtBubble emojis={thought} />
           ) : fact ? (
             <SpeechBubble text={fact} />
+          ) : playMode.fact ? (
+            <SpeechBubble text={playMode.fact} />
           ) : (
             bubbleText && <SpeechBubble text={bubbleText} />
           )}
@@ -172,6 +188,14 @@ function App() {
       </div>
 
       <div className="absolute inset-x-0 bottom-4 flex flex-col items-center gap-3 px-4">
+        <button
+          type="button"
+          onClick={playMode.start}
+          disabled={isSending || playMode.isPlaying}
+          className="rounded-full bg-white/10 px-4 py-1.5 text-xs font-medium text-white/80 transition-colors hover:bg-white/20 disabled:opacity-40"
+        >
+          {playMode.isPlaying ? 'playing...' : 'Go play'}
+        </button>
         <ChatInput onSend={handleSend} disabled={isSending} />
       </div>
     </div>

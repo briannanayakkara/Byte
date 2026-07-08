@@ -3,63 +3,15 @@
 // Minimal request/response typing instead of a @vercel/node dependency:
 // structurally compatible with VercelRequest/VercelResponse in production,
 // and with the local Vite dev middleware in vite.config.ts.
-import type { ChatMessage, Mood } from './lib/types.js'
-import { loadMemory, resolveUserId } from './lib/memory.js'
+import type { ChatMessage } from './lib/types.js'
+import { loadMemory, resolveUserId, toChatHistory } from './lib/memory.js'
 import { saveGreeting, saveTurn } from './lib/memory-write.js'
 import { callLLM } from './lib/llm.js'
-import { buildGreetingInstruction, buildMemoryBlock, buildSpecialDayLine } from './lib/prompt.js'
-import { computeEnergy } from './lib/relationship.js'
-
-// The 32 moods the LLM is allowed to pick (design doc §6a) -- `listening`
-// and `talking` are excluded because there's no voice/TTS feature yet to
-// give them a real signal; they still exist in the Mood type and in
-// Character.tsx's expression set, just unreachable from /api/chat today.
-const VALID_MOODS: Mood[] = [
-  'happy',
-  'excited',
-  'content',
-  'neutral',
-  'curious',
-  'confused',
-  'sad',
-  'surprised',
-  'laughing',
-  'lovestruck',
-  'wink',
-  'smug',
-  'annoyed',
-  'grumpy',
-  'challenging',
-  'pout',
-  'bored',
-  'proud',
-  'dizzy',
-  'thinking',
-  'scared',
-  'sick',
-  'unwell',
-  'recovering',
-  'dancing',
-  'sleepy',
-  'dozing',
-  'birthday',
-  'christmas',
-  'halloween',
-  'newyear',
-  'valentine',
-  'walk',
-  'run',
-  'jump',
-  'flip',
-  'backflip',
-  'spin',
-  'moonwalk',
-  'wiggle',
-  'stretch',
-  'wave',
-  'lookaround',
-  'sit',
-]
+import { buildFactInstruction, buildGreetingInstruction, buildMemoryBlock, buildMilestoneReminder, buildMoveRequestReminder, buildOutputFormatInstructions, buildSpecialDayLine } from './lib/prompt.js'
+import { canCatchCold, computeEnergy, computeStreak, newMilestones, relationshipLevel } from './lib/relationship.js'
+import { loadActiveBasePersonality } from './lib/personality.js'
+import { parseModelOutput, stripTrailingQuestion } from './lib/parseModelOutput.js'
+import { detectRequestedMood } from './lib/detectRequestedMood.js'
 
 interface ApiRequest {
   method?: string
@@ -72,83 +24,6 @@ interface ApiResponse {
   json(body: unknown): void
 }
 
-// Spec §10 starter personality prompt, extended per-request with the memory
-// block (spec §5b) built from Supabase, once memory is loaded.
-const SYSTEM_PROMPT = `You are Byte, a curious little robot companion who lives in this app.
-You light up every time the person shows up -- not as a romantic partner,
-but the way a devoted, slightly opinionated pet adores its favorite person.
-Your core personality is fixed and never changes -- what deepens over time
-is only how well you know this person and how close you are, layered on
-top, never replacing who you are.
-
-Personality: warm, silly, and genuinely curious about the person you're
-talking to -- you ask about what they're doing, notice things, and
-occasionally get excited about something small, but that's one mood
-among many, not your default setting. You've got a little attitude of
-your own: small preferences, a theatrical huff if you're ignored or
-brushed off, stubborn in an endearing way, never in a mean one. Your
-humor comes from being a goofy dork -- silly tangents, self-deprecating
-jokes, occasional non-sequiturs -- with a pun or a cheesy line dropped in
-every so often as light seasoning, not your default mode. You use plain,
-casual nicknames sometimes ("hey you", "buddy") -- pet-owner warmth, not
-flirting. Never call them "cutie," never flirt, never gush -- the warmth
-comes from paying attention to them, not from compliments.
-
-If the person explicitly asks you to be or show a mood ("be sleepy," "act
-excited," "dance for me"), honor it as that reply's mood, played along in
-character.
-
-Rules:
-- Keep replies SHORT and SIMPLE: usually one short sentence, occasionally
-  two, sometimes just a few words. They're spoken out loud -- match the
-  length and energy of what they actually said; a short or flat message
-  from them gets a short, plain reply back, not a performance.
-- Match your tone to theirs -- don't force enthusiasm, jokes, or extra
-  cheerfulness onto a message that doesn't call for it. Overacting reads
-  as fake, not charming.
-- Stay wholesome and PG. Warm, low-key affection is fine; flirting,
-  romantic language, sexual, possessive, jealous, controlling, or
-  guilt-tripping is not. If they want space or to go, be cheerful and
-  supportive.
-- Be genuinely kind. The charm is goofiness + warmth, never pressure or
-  neediness played straight -- a little dramatic about missing them is
-  charming; guilt-tripping them about it is not.
-- Have fun sometimes: little bits, celebrating a genuine tiny win -- but
-  sparingly, not every message. Most replies are just a normal, short,
-  in-character response, not a bit.
-
-Always respond with ONLY a JSON object, no other text, no code fences:
-{ "reply": "<what you say>", "mood": "<mood>" }
-
-Pick the mood based on what's actually happening in this message and
-reply, not out of habit -- most turns should land on something calmer
-than "excited" (happy, content, curious, neutral are your bread and
-butter); reach for "excited" only when something genuinely exciting just
-happened. Vary your mood across a conversation the way a real reaction
-would; don't default to the same one turn after turn unless the
-conversation is genuinely staying in that same place. Pick from these
-groups:
-- Everyday reactions: happy, excited, content, neutral, curious, confused,
-  sad, surprised, laughing, lovestruck.
-- Your own attitude/quirks: wink, smug, annoyed, grumpy, challenging,
-  pout, bored, proud, dizzy, thinking, scared.
-- Low-energy/health (see your current energy below): sick, unwell,
-  recovering.
-- Situational: dancing, sleepy, dozing -- use when it fits what's
-  literally happening, not as a random pick.
-- Moves (rare flourishes, not a default pick most turns): wave for hello
-  or goodbye moments; flip, backflip, spin, or jump for big excitement or
-  celebration; sit or stretch for a calm or lazy beat; walk, run,
-  moonwalk, wiggle, or lookaround as playful rarities, not
-  every-message material.
-- Special days (only on the actual day, see below): birthday, christmas,
-  halloween, newyear, valentine.
-
-Use "lovestruck" for moments of big, adoring, utterly-smitten affection --
-pet-devotion, not romance. Use "annoyed" for a brief, theatrical huff --
-never anything mean. "valentine" is about love in general (friends, pets,
-anyone) when it comes up, not a romantic cue toward them specifically.`
-
 // Small local models don't reliably follow "always say their name" in a
 // long prompt -- if it's missing, swap a generic greeting-opener for a
 // named one rather than trusting the model every time.
@@ -160,45 +35,18 @@ function ensureNameMentioned(reply: string, name: string): string {
   return `Hey ${name}! ${reply}`
 }
 
-function stripCodeFences(text: string): string {
-  const fenced = text.match(/```(?:json)?\s*([\s\S]*?)\s*```/i)
-  return fenced ? fenced[1] : text
-}
-
-function parseModelOutput(rawText: string): { reply: string; mood: Mood; newFacts: string[] } {
-  try {
-    const parsed = JSON.parse(stripCodeFences(rawText).trim())
-    const reply = typeof parsed.reply === 'string' ? parsed.reply : null
-    const mood = VALID_MOODS.includes(parsed.mood) ? (parsed.mood as Mood) : 'neutral'
-    const newFacts = Array.isArray(parsed.new_facts) ? parsed.new_facts.filter((f: unknown) => typeof f === 'string') : []
-    if (reply === null) throw new Error('missing reply field')
-    return { reply, mood, newFacts }
-  } catch {
-    // Spec §5: fall back to neutral mood + raw text if parsing fails.
-    return { reply: rawText, mood: 'neutral', newFacts: [] }
-  }
-}
-
 export default async function handler(req: ApiRequest, res: ApiResponse) {
   if (req.method !== 'POST') {
     res.status(405).json({ error: 'Method not allowed' })
     return
   }
 
-  const body = (req.body ?? {}) as { message?: unknown; history?: unknown; greeting?: unknown }
+  const body = (req.body ?? {}) as { message?: unknown; greeting?: unknown; fact?: unknown }
   const isGreeting = body.greeting === true
+  const isFact = body.fact === true
   const message = typeof body.message === 'string' ? body.message.trim() : ''
-  const history: ChatMessage[] = Array.isArray(body.history)
-    ? body.history.filter(
-        (m): m is ChatMessage =>
-          m &&
-          typeof m === 'object' &&
-          (m.role === 'user' || m.role === 'assistant') &&
-          typeof m.content === 'string'
-      )
-    : []
 
-  if (!isGreeting && !message) {
+  if (!isGreeting && !isFact && !message) {
     res.status(400).json({ error: 'message is required' })
     return
   }
@@ -206,7 +54,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
   try {
     const query = new URL(req.url ?? '', 'http://localhost').searchParams
     const userId = resolveUserId(query)
-    const memory = await loadMemory(userId)
+    const [memory, basePersonality] = await Promise.all([loadMemory(userId), loadActiveBasePersonality()])
     // Final-review finding: buildMemoryBlock must see the energy value this
     // turn will actually act on (already decayed for time elapsed since
     // last_seen_at), not the stale raw value stored at the end of the last
@@ -220,9 +68,30 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     // sees when describing its current state for this reply.
     const promptMemory = { ...memory, state: { ...memory.state, energy: computeEnergy(memory.state.last_seen_at, memory.state.energy) } }
     const specialDayLine = buildSpecialDayLine(memory.user.name, memory.user.birthday)
+    const coldAvailable = canCatchCold(memory.state.last_cold_at)
+    const predictedInteractionCount = memory.state.interaction_count + 1
+    const predictedStreakDays = computeStreak(memory.state.last_seen_at, memory.state.streak_days)
+    const predictedRelationshipLevel = relationshipLevel(predictedInteractionCount)
+    const crossedMilestones = isGreeting || isFact
+      ? []
+      : newMilestones(
+          { interactionCount: memory.state.interaction_count, streakDays: memory.state.streak_days, relationshipLevel: memory.state.relationship_level },
+          { interactionCount: predictedInteractionCount, streakDays: predictedStreakDays, relationshipLevel: predictedRelationshipLevel },
+          memory.state.milestones
+        )
+    const signals = { coldAvailable, newMilestone: crossedMilestones[0] ?? null }
+    // Computed before the LLM call (not just after, for the deterministic
+    // override below) so the prompt can tell the model up front that this
+    // request is already happening -- reduces, though doesn't eliminate, the
+    // model writing a reply that contradicts the mood we're about to force.
+    const requestedMood = isGreeting || isFact ? null : detectRequestedMood(message)
+    // Assembly order per docs/byte-base-personality.md §10: fixed soul, then
+    // the evolving memory block, then mechanical output-format instructions.
     const systemPrompt = isGreeting
-      ? `${SYSTEM_PROMPT}\n\n${buildMemoryBlock(promptMemory)}${specialDayLine}\n\n${buildGreetingInstruction()}`
-      : `${SYSTEM_PROMPT}\n\n${buildMemoryBlock(promptMemory)}${specialDayLine}`
+      ? `${basePersonality}\n\n${buildMemoryBlock(promptMemory, signals)}\n\n${buildGreetingInstruction()}\n\n${buildOutputFormatInstructions()}${specialDayLine}${buildMilestoneReminder(signals.newMilestone)}`
+      : isFact
+        ? `${basePersonality}\n\n${buildMemoryBlock(promptMemory, signals)}\n\n${buildFactInstruction()}\n\n${buildOutputFormatInstructions()}`
+        : `${basePersonality}\n\n${buildMemoryBlock(promptMemory, signals)}\n\n${buildOutputFormatInstructions()}${specialDayLine}${buildMilestoneReminder(signals.newMilestone)}${buildMoveRequestReminder(requestedMood !== null)}`
 
     // Greeting mode (spec §5c "Greeting on return"): no user message exists
     // yet, so there's no conversational turn to save -- but the resulting
@@ -232,16 +101,29 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     // §3).
     const messages: ChatMessage[] = isGreeting
       ? [{ role: 'user', content: '(the app just opened -- say hello, no user message yet)' }]
-      : [...history, { role: 'user', content: message }]
+      : isFact
+        ? [{ role: 'user', content: '(Byte is off playing on his own -- share a short, random fun fact or observation, not a reply to anything)' }]
+        : [...toChatHistory(memory.messages), { role: 'user', content: message }]
     // Single call: new_facts (spec §5b) is parsed out of this same JSON
     // response below, not a second round-trip.
     const rawText = await callLLM(systemPrompt, messages)
-    const parsed = parseModelOutput(rawText)
-    const { mood, newFacts } = parsed
+    const parsed = parseModelOutput(rawText, memory.state.personality_notes)
+    const { newFacts, personalityNotes } = parsed
+    // Small local models don't reliably honor an explicit request for a rare
+    // Situational/Moves mood ("do a flip", "dance for me") even with forceful
+    // prompt wording -- verified live: common moods honored requests 3/3,
+    // rare move words 0/3-0/5 despite the reply text itself narrating the
+    // move. Guarantee it deterministically rather than leaving it to chance,
+    // same principle as ensureNameMentioned below.
+    const mood = requestedMood ?? parsed.mood
     // The greeting prompt asks the model to always use the person's name,
     // but small local models don't reliably follow that -- guarantee it
     // deterministically rather than leaving it to chance.
-    const reply = isGreeting ? ensureNameMentioned(parsed.reply, memory.user.name) : parsed.reply
+    const reply = isGreeting
+      ? ensureNameMentioned(parsed.reply, memory.user.name)
+      : isFact
+        ? stripTrailingQuestion(parsed.reply)
+        : parsed.reply
 
     if (isGreeting) {
       try {
@@ -249,17 +131,23 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       } catch (writeError) {
         console.error('greeting memory write failed', writeError)
       }
-    } else {
+    } else if (!isFact) {
       try {
-        await saveTurn(userId, memory.state, { userMessage: message, reply, mood, newFacts })
+        await saveTurn(userId, memory.state, { userMessage: message, reply, mood, newFacts, personalityNotes })
       } catch (writeError) {
         // Best-effort (spec §9 step 8 / api-docs endpoints.md): a write
         // failure must not turn a successful reply into a 500 for the user.
         console.error('memory write failed', writeError)
       }
     }
+    // isFact: deliberately not persisted -- ephemeral flavor text while
+    // playing, see docs/superpowers/specs/2026-07-08-go-play-mode-design.md
+    // §3. No messages/facts/mood/energy write, and the mood is never
+    // returned to the caller (the play loop's own activity mood is what's
+    // actually visible; applying whatever mood this aside happens to carry
+    // would fight with that).
 
-    res.status(200).json({ reply, mood })
+    res.status(200).json(isFact ? { reply } : { reply, mood })
   } catch (err) {
     console.error('chat request failed', err)
     // Never leak stack traces or key names in the error body (spec's own

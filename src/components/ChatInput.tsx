@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 
 interface ChatInputProps {
@@ -8,6 +8,16 @@ interface ChatInputProps {
 
 export function ChatInput({ onSend, disabled = false }: ChatInputProps) {
   const [value, setValue] = useState('')
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  // A disabled <input> can't hold focus -- sending a message disables it
+  // (correct, prevents double-submit) which forces a blur, and nothing
+  // re-focuses it once the reply lands and it re-enables, so the user had
+  // to click back into it before every message. Refocus whenever it
+  // becomes usable again (also focuses it on first mount).
+  useEffect(() => {
+    if (!disabled) inputRef.current?.focus()
+  }, [disabled])
 
   function handleSubmit(e: FormEvent) {
     e.preventDefault()
@@ -20,6 +30,7 @@ export function ChatInput({ onSend, disabled = false }: ChatInputProps) {
   return (
     <form onSubmit={handleSubmit} className="flex w-full max-w-md gap-2">
       <input
+        ref={inputRef}
         type="text"
         value={value}
         onChange={(e) => setValue(e.target.value)}

@@ -49,6 +49,9 @@ export type Mood =
   | 'wave'
   | 'lookaround'
   | 'sit'
+  | 'skate'
+  | 'playball'
+  | 'jam'
 
 export interface ChatMessage {
   role: 'user' | 'assistant'
@@ -61,15 +64,20 @@ export interface User {
   nicknames: string[]
   birthday: string | null
   notes: string | null
+  location: string | null
+  pronouns: string | null
   is_test: boolean
   created_at: string
 }
+
+export const FACT_CATEGORIES = ['likes', 'dislikes', 'people', 'events', 'running_joke', 'person', 'routine', 'preference', 'life_event', 'other'] as const
+export type FactCategory = (typeof FACT_CATEGORIES)[number]
 
 export interface Fact {
   id: string
   user_id: string
   content: string
-  category: 'likes' | 'dislikes' | 'people' | 'events' | 'other'
+  category: FactCategory
   confidence: number | null
   created_at: string
   last_referenced_at: string
@@ -94,6 +102,8 @@ export interface CharacterState {
   last_seen_at: string | null
   streak_days: number
   personality_notes: string | null
+  last_cold_at: string | null
+  milestones: string[]
 }
 
 export interface ImportantDate {

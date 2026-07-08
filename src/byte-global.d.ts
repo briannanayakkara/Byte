@@ -8,6 +8,9 @@ declare global {
     Byte?: {
       set(name: Mood): void
       list(): Mood[]
+      pos(): number
+      poke(variant?: number): void
+      interactive(enabled: boolean): void
     }
   }
 }

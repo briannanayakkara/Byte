@@ -1,20 +1,15 @@
-import type { ChatMessage, Mood } from '../types'
+import type { Mood } from '../types'
 
 interface ChatResponse {
   reply: string
   mood: Mood
 }
 
-// Spec §5: keep the last ~6 messages of browser-held history and send them
-// with each request. This is separate from Supabase's longer-term memory
-// (spec §5b), which lands server-side in step 7.
-const HISTORY_LIMIT = 6
-
-export async function sendChatMessage(message: string, history: ChatMessage[]): Promise<ChatResponse> {
+export async function sendChatMessage(message: string): Promise<ChatResponse> {
   const response = await fetch('/api/chat', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ message, history: history.slice(-HISTORY_LIMIT) }),
+    body: JSON.stringify({ message }),
   })
 
   if (!response.ok) {
@@ -31,6 +26,24 @@ export async function fetchGreeting(): Promise<ChatResponse> {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ greeting: true }),
+  })
+
+  if (!response.ok) {
+    throw new Error(`/api/chat responded ${response.status}`)
+  }
+
+  return response.json()
+}
+
+// docs/superpowers/specs/2026-07-08-go-play-mode-design.md §3: fetched
+// repeatedly while the "go play" loop is running. Deliberately typed
+// without `mood` -- the server never returns one for this request shape
+// (the play loop's own activity mood is what's actually displayed).
+export async function fetchPlayFact(): Promise<{ reply: string }> {
+  const response = await fetch('/api/chat', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ fact: true }),
   })
 
   if (!response.ok) {

@@ -7,6 +7,11 @@ const ENERGY_FLOOR_HOURS = 72 // 3 days -- fully decayed to the floor by this po
 const ENERGY_FLOOR = 30 // never drops below this -- EMO gets bored, it doesn't shut down
 const ENERGY_INTERACTION_BUMP = 8 // added on every new turn, capped at 100
 
+const COLD_COOLDOWN_DAYS = 14 // §5: "every few weeks," never twice close together
+
+const INTERACTION_MILESTONES = [10, 50, 100, 250, 500]
+const STREAK_MILESTONES = [3, 7, 30, 100]
+
 // Mirrored in supabase/migrations/20260707010000_atomic_character_turn_upsert.sql's
 // upsert_character_turn() CASE expression for atomic writes (design doc
 // docs/superpowers/specs/2026-07-07-byte-v3-character-and-continuity-design.md
@@ -69,4 +74,39 @@ export function computeEnergy(lastSeenAt: string | null, priorEnergy: number, no
   }
 
   return Math.min(100, decayed + ENERGY_INTERACTION_BUMP)
+}
+
+// §5 cold rate-limit: gates the sick/unwell/recovering moods regardless of
+// energy band. "Never during a hard time" stays a prompt-level judgment call
+// (api/lib/prompt.ts's distilled base personality already carries that rule)
+// since the code has no reliable signal for "having a hard time" -- this
+// function only enforces the deterministic cooldown half of §5.
+export function canCatchCold(lastColdAt: string | null, now: Date = new Date()): boolean {
+  if (lastColdAt === null) return true
+  const daysSince = (now.getTime() - new Date(lastColdAt).getTime()) / 86_400_000
+  return daysSince >= COLD_COOLDOWN_DAYS
+}
+
+export interface MilestoneInputs {
+  interactionCount: number
+  streakDays: number
+  relationshipLevel: number
+}
+
+// §6 "Streaks & milestones": returns milestone ids newly crossed going from
+// `prior` to `next`, excluding anything already in `alreadyCelebrated`
+// (character_state.milestones) so nothing repeats. Called twice per turn from
+// the same unmodified priorState -- once in chat.ts (predicted, for the
+// prompt) and once in memory-write.ts (for storage) -- same pattern as
+// computeEnergy's existing prompt-vs-storage split.
+export function newMilestones(prior: MilestoneInputs, next: MilestoneInputs, alreadyCelebrated: string[]): string[] {
+  const found: string[] = []
+  for (const n of INTERACTION_MILESTONES) {
+    if (prior.interactionCount < n && next.interactionCount >= n) found.push(`interactions_${n}`)
+  }
+  for (const n of STREAK_MILESTONES) {
+    if (prior.streakDays < n && next.streakDays >= n) found.push(`streak_${n}`)
+  }
+  if (next.relationshipLevel > prior.relationshipLevel) found.push(`level_${next.relationshipLevel}`)
+  return found.filter((m) => !alreadyCelebrated.includes(m))
 }

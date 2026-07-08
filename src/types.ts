@@ -45,6 +45,13 @@ export type Mood =
   | 'wave'
   | 'lookaround'
   | 'sit'
+  | 'skate'
+  | 'playball'
+  | 'jam'
+  // Set only by a click/tap reaction inside Character.tsx -- never
+  // externally set, never in list()/SELECTABLE_MOODS, same treatment as
+  // 'listening'/'talking' below.
+  | 'poke'
 
 export interface ChatMessage {
   role: 'user' | 'assistant'
