@@ -31,6 +31,14 @@ export function pickNextActivity(previous: Mood | null, random: () => number = M
   return candidates[Math.floor(random() * candidates.length)]
 }
 
+// Facts are deliberately on their own slow cadence, independent of activity
+// switching -- fetching one on every activity change (as short as 1.6s for
+// a flourish move) made facts fire almost continuously and made every
+// activity switch look like an interruption rather than a new trick.
+const FIRST_FACT_DELAY_MS = 8_000
+const FACT_INTERVAL_MS = 120_000
+const FACT_VISIBLE_MS = 5_000
+
 interface UsePlayModeResult {
   isPlaying: boolean
   fact: string | null
@@ -43,11 +51,15 @@ export function usePlayMode(): UsePlayModeResult {
   const [fact, setFact] = useState<string | null>(null)
   const activeRef = useRef(false)
   const previousMoodRef = useRef<Mood | null>(null)
-  const timeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  const activityTimeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  const factTimeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  const factHideTimeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
 
   const stop = useCallback(() => {
     activeRef.current = false
-    if (timeoutRef.current) clearTimeout(timeoutRef.current)
+    if (activityTimeoutRef.current) clearTimeout(activityTimeoutRef.current)
+    if (factTimeoutRef.current) clearTimeout(factTimeoutRef.current)
+    if (factHideTimeoutRef.current) clearTimeout(factHideTimeoutRef.current)
     setIsPlaying(false)
     setFact(null)
   }, [])
@@ -58,27 +70,42 @@ export function usePlayMode(): UsePlayModeResult {
     previousMoodRef.current = null
     setIsPlaying(true)
 
-    function playNext() {
+    function playNextActivity() {
       if (!activeRef.current) return
       const activity = pickNextActivity(previousMoodRef.current)
       previousMoodRef.current = activity.mood
       window.Byte?.set(activity.mood)
+      activityTimeoutRef.current = setTimeout(playNextActivity, activity.durationMs)
+    }
+
+    function fetchNextFact() {
+      if (!activeRef.current) return
       fetchPlayFact()
         .then(({ reply }) => {
-          if (activeRef.current) setFact(reply)
+          if (!activeRef.current) return
+          setFact(reply)
+          factHideTimeoutRef.current = setTimeout(() => {
+            if (activeRef.current) setFact(null)
+          }, FACT_VISIBLE_MS)
         })
         .catch(() => {
           // Non-critical: no fact this round, keep playing regardless.
         })
-      timeoutRef.current = setTimeout(playNext, activity.durationMs)
+        .finally(() => {
+          if (activeRef.current) factTimeoutRef.current = setTimeout(fetchNextFact, FACT_INTERVAL_MS)
+        })
     }
-    playNext()
+
+    playNextActivity()
+    factTimeoutRef.current = setTimeout(fetchNextFact, FIRST_FACT_DELAY_MS)
   }, [])
 
   useEffect(() => {
     return () => {
       activeRef.current = false
-      if (timeoutRef.current) clearTimeout(timeoutRef.current)
+      if (activityTimeoutRef.current) clearTimeout(activityTimeoutRef.current)
+      if (factTimeoutRef.current) clearTimeout(factTimeoutRef.current)
+      if (factHideTimeoutRef.current) clearTimeout(factHideTimeoutRef.current)
     }
   }, [])
 
