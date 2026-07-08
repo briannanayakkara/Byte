@@ -230,3 +230,15 @@ export function buildMilestoneReminder(newMilestone: string | null): string {
   if (newMilestone === null) return ''
   return `\n\nOVERRIDE, read this last and take it seriously: ${MILESTONE_COPY[newMilestone] ?? newMilestone} -- you MUST explicitly call this out and celebrate it in your reply text this one time, not just pick a happy mood silently.`
 }
+
+// api/lib/detectRequestedMood.ts deterministically forces the JSON "mood"
+// field when the user names a move (see that file's comment for why), but
+// it can't fix the free-text "reply" -- live testing occasionally produced
+// a reply that downplayed or refused the very thing the mood claims to be
+// doing ("I can't do flips like a real robot"). Telling the model up front
+// that this specific request is already happening measurably reduces that
+// mismatch, same recency-boosted-override treatment as the other signals.
+export function buildMoveRequestReminder(requested: boolean): string {
+  if (!requested) return ''
+  return `\n\nOVERRIDE, read this last and take it seriously: they just explicitly asked you to do something physical (a move/dance) -- you ARE doing it this reply, enthusiastically. Do not say you can't, downplay it, or apologize for not being able to; play it out for real in your reply text.`
+}

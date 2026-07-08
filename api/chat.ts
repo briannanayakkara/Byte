@@ -7,7 +7,7 @@ import type { ChatMessage } from './lib/types.js'
 import { loadMemory, resolveUserId, toChatHistory } from './lib/memory.js'
 import { saveGreeting, saveTurn } from './lib/memory-write.js'
 import { callLLM } from './lib/llm.js'
-import { buildGreetingInstruction, buildMemoryBlock, buildMilestoneReminder, buildOutputFormatInstructions, buildSpecialDayLine } from './lib/prompt.js'
+import { buildGreetingInstruction, buildMemoryBlock, buildMilestoneReminder, buildMoveRequestReminder, buildOutputFormatInstructions, buildSpecialDayLine } from './lib/prompt.js'
 import { canCatchCold, computeEnergy, computeStreak, newMilestones, relationshipLevel } from './lib/relationship.js'
 import { loadActiveBasePersonality } from './lib/personality.js'
 import { parseModelOutput } from './lib/parseModelOutput.js'
@@ -79,11 +79,16 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
           memory.state.milestones
         )
     const signals = { coldAvailable, newMilestone: crossedMilestones[0] ?? null }
+    // Computed before the LLM call (not just after, for the deterministic
+    // override below) so the prompt can tell the model up front that this
+    // request is already happening -- reduces, though doesn't eliminate, the
+    // model writing a reply that contradicts the mood we're about to force.
+    const requestedMood = isGreeting ? null : detectRequestedMood(message)
     // Assembly order per docs/byte-base-personality.md §10: fixed soul, then
     // the evolving memory block, then mechanical output-format instructions.
     const systemPrompt = isGreeting
       ? `${basePersonality}\n\n${buildMemoryBlock(promptMemory, signals)}\n\n${buildGreetingInstruction()}\n\n${buildOutputFormatInstructions()}${specialDayLine}${buildMilestoneReminder(signals.newMilestone)}`
-      : `${basePersonality}\n\n${buildMemoryBlock(promptMemory, signals)}\n\n${buildOutputFormatInstructions()}${specialDayLine}${buildMilestoneReminder(signals.newMilestone)}`
+      : `${basePersonality}\n\n${buildMemoryBlock(promptMemory, signals)}\n\n${buildOutputFormatInstructions()}${specialDayLine}${buildMilestoneReminder(signals.newMilestone)}${buildMoveRequestReminder(requestedMood !== null)}`
 
     // Greeting mode (spec §5c "Greeting on return"): no user message exists
     // yet, so there's no conversational turn to save -- but the resulting
@@ -105,7 +110,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     // rare move words 0/3-0/5 despite the reply text itself narrating the
     // move. Guarantee it deterministically rather than leaving it to chance,
     // same principle as ensureNameMentioned below.
-    const mood = isGreeting ? parsed.mood : (detectRequestedMood(message) ?? parsed.mood)
+    const mood = requestedMood ?? parsed.mood
     // The greeting prompt asks the model to always use the person's name,
     // but small local models don't reliably follow that -- guarantee it
     // deterministically rather than leaving it to chance.
