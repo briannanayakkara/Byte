@@ -150,6 +150,19 @@ above) somewhere in the greeting -- never a generic "hey you" with no
 name attached. One line, no question you're answering.`
 }
 
+// docs/superpowers/specs/2026-07-08-go-play-mode-design.md §3: a
+// spontaneous aside while Byte is off playing on his own (the "go play"
+// button's loop), not a reply to anything the person said -- memory-aware
+// (same personality/context as every other request) but deliberately not
+// persisted by the caller.
+export function buildFactInstruction(): string {
+  return `The person isn't talking to you right now -- you're off playing on
+your own and just feel like sharing something. Say ONE short, random,
+in-character fun fact, observation, or aside -- not a reply to anything,
+not a question, just a little spontaneous thought out loud. One line,
+playful, matches your voice.`
+}
+
 // Step 3 of docs/byte-base-personality.md §10's assembly order: mechanical
 // output-contract instructions, appended after the memory block. Kept out of
 // the fixed base personality (Task 3) since it's about response mechanics,

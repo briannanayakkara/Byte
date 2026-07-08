@@ -7,7 +7,7 @@ import type { ChatMessage } from './lib/types.js'
 import { loadMemory, resolveUserId, toChatHistory } from './lib/memory.js'
 import { saveGreeting, saveTurn } from './lib/memory-write.js'
 import { callLLM } from './lib/llm.js'
-import { buildGreetingInstruction, buildMemoryBlock, buildMilestoneReminder, buildMoveRequestReminder, buildOutputFormatInstructions, buildSpecialDayLine } from './lib/prompt.js'
+import { buildFactInstruction, buildGreetingInstruction, buildMemoryBlock, buildMilestoneReminder, buildMoveRequestReminder, buildOutputFormatInstructions, buildSpecialDayLine } from './lib/prompt.js'
 import { canCatchCold, computeEnergy, computeStreak, newMilestones, relationshipLevel } from './lib/relationship.js'
 import { loadActiveBasePersonality } from './lib/personality.js'
 import { parseModelOutput } from './lib/parseModelOutput.js'
@@ -41,11 +41,12 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     return
   }
 
-  const body = (req.body ?? {}) as { message?: unknown; greeting?: unknown }
+  const body = (req.body ?? {}) as { message?: unknown; greeting?: unknown; fact?: unknown }
   const isGreeting = body.greeting === true
+  const isFact = body.fact === true
   const message = typeof body.message === 'string' ? body.message.trim() : ''
 
-  if (!isGreeting && !message) {
+  if (!isGreeting && !isFact && !message) {
     res.status(400).json({ error: 'message is required' })
     return
   }
@@ -71,7 +72,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     const predictedInteractionCount = memory.state.interaction_count + 1
     const predictedStreakDays = computeStreak(memory.state.last_seen_at, memory.state.streak_days)
     const predictedRelationshipLevel = relationshipLevel(predictedInteractionCount)
-    const crossedMilestones = isGreeting
+    const crossedMilestones = isGreeting || isFact
       ? []
       : newMilestones(
           { interactionCount: memory.state.interaction_count, streakDays: memory.state.streak_days, relationshipLevel: memory.state.relationship_level },
@@ -83,12 +84,14 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     // override below) so the prompt can tell the model up front that this
     // request is already happening -- reduces, though doesn't eliminate, the
     // model writing a reply that contradicts the mood we're about to force.
-    const requestedMood = isGreeting ? null : detectRequestedMood(message)
+    const requestedMood = isGreeting || isFact ? null : detectRequestedMood(message)
     // Assembly order per docs/byte-base-personality.md §10: fixed soul, then
     // the evolving memory block, then mechanical output-format instructions.
     const systemPrompt = isGreeting
       ? `${basePersonality}\n\n${buildMemoryBlock(promptMemory, signals)}\n\n${buildGreetingInstruction()}\n\n${buildOutputFormatInstructions()}${specialDayLine}${buildMilestoneReminder(signals.newMilestone)}`
-      : `${basePersonality}\n\n${buildMemoryBlock(promptMemory, signals)}\n\n${buildOutputFormatInstructions()}${specialDayLine}${buildMilestoneReminder(signals.newMilestone)}${buildMoveRequestReminder(requestedMood !== null)}`
+      : isFact
+        ? `${basePersonality}\n\n${buildMemoryBlock(promptMemory, signals)}\n\n${buildFactInstruction()}\n\n${buildOutputFormatInstructions()}`
+        : `${basePersonality}\n\n${buildMemoryBlock(promptMemory, signals)}\n\n${buildOutputFormatInstructions()}${specialDayLine}${buildMilestoneReminder(signals.newMilestone)}${buildMoveRequestReminder(requestedMood !== null)}`
 
     // Greeting mode (spec §5c "Greeting on return"): no user message exists
     // yet, so there's no conversational turn to save -- but the resulting
@@ -98,7 +101,9 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     // §3).
     const messages: ChatMessage[] = isGreeting
       ? [{ role: 'user', content: '(the app just opened -- say hello, no user message yet)' }]
-      : [...toChatHistory(memory.messages), { role: 'user', content: message }]
+      : isFact
+        ? [{ role: 'user', content: '(Byte is off playing on his own -- share a short, random fun fact or observation, not a reply to anything)' }]
+        : [...toChatHistory(memory.messages), { role: 'user', content: message }]
     // Single call: new_facts (spec §5b) is parsed out of this same JSON
     // response below, not a second round-trip.
     const rawText = await callLLM(systemPrompt, messages)
@@ -122,7 +127,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       } catch (writeError) {
         console.error('greeting memory write failed', writeError)
       }
-    } else {
+    } else if (!isFact) {
       try {
         await saveTurn(userId, memory.state, { userMessage: message, reply, mood, newFacts, personalityNotes })
       } catch (writeError) {
@@ -131,8 +136,14 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         console.error('memory write failed', writeError)
       }
     }
+    // isFact: deliberately not persisted -- ephemeral flavor text while
+    // playing, see docs/superpowers/specs/2026-07-08-go-play-mode-design.md
+    // §3. No messages/facts/mood/energy write, and the mood is never
+    // returned to the caller (the play loop's own activity mood is what's
+    // actually visible; applying whatever mood this aside happens to carry
+    // would fight with that).
 
-    res.status(200).json({ reply, mood })
+    res.status(200).json(isFact ? { reply } : { reply, mood })
   } catch (err) {
     console.error('chat request failed', err)
     // Never leak stack traces or key names in the error body (spec's own

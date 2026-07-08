@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildMemoryBlock, buildMilestoneReminder, buildMoveRequestReminder, buildOutputFormatInstructions, buildSpecialDayLine } from './prompt.js'
+import { buildFactInstruction, buildMemoryBlock, buildMilestoneReminder, buildMoveRequestReminder, buildOutputFormatInstructions, buildSpecialDayLine } from './prompt.js'
 import type { MemorySnapshot } from './memory.js'
 
 const BASE_MEMORY: MemorySnapshot = {
@@ -81,6 +81,14 @@ describe('buildMilestoneReminder', () => {
     const line = buildMilestoneReminder('interactions_100')
     expect(line).toContain('OVERRIDE')
     expect(line).toContain('ONE HUNDRED conversations')
+  })
+})
+
+describe('buildFactInstruction', () => {
+  it('asks for a single spontaneous fact, not a reply', () => {
+    const text = buildFactInstruction()
+    expect(text).toContain('fun fact')
+    expect(text).toContain('not a reply')
   })
 })
 
