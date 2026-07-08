@@ -15,4 +15,10 @@ describe('SELECTABLE_MOODS', () => {
     const expectedCount = MOOD_GROUPS.reduce((sum, g) => sum + g.moods.length, 0)
     expect(SELECTABLE_MOODS.length).toBe(expectedCount)
   })
+
+  it('includes the Play group moods', () => {
+    expect(SELECTABLE_MOODS).toContain('skate')
+    expect(SELECTABLE_MOODS).toContain('playball')
+    expect(SELECTABLE_MOODS).toContain('jam')
+  })
 })

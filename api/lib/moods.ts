@@ -30,6 +30,10 @@ export const MOOD_GROUPS: { label: string; moods: Mood[] }[] = [
     moods: ['walk', 'run', 'jump', 'flip', 'backflip', 'spin', 'moonwalk', 'wiggle', 'stretch', 'wave', 'lookaround', 'sit'],
   },
   {
+    label: 'Play (fun toy routines -- a real little scene, not a quick flourish)',
+    moods: ['skate', 'playball', 'jam'],
+  },
+  {
     label: 'Special days (only on the actual day, see below)',
     moods: ['birthday', 'christmas', 'halloween', 'newyear', 'valentine'],
   },

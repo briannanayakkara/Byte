@@ -50,6 +50,9 @@ const MOOD_LABELS: Record<Mood, string> = {
   wave: '👋 wave',
   lookaround: '👀 lookaround',
   sit: '🪑 sit',
+  skate: '🛹 skate',
+  playball: '⚽ playball',
+  jam: '🎧 jam',
 }
 
 const VISIBLE_MS = 2500

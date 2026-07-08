@@ -579,6 +579,26 @@ export function Character() {
         extra.blink = true
         extra.anim = 'sit'
       },
+      skate() {
+        screen.append(eye(exL, cyL, 26, 20, 9), eye(exR, cyL, 26, 20, 9))
+        extra.blink = true
+        extra.anim = 'walk'
+      },
+      playball() {
+        screen.append(
+          elem('circle', { cx: exL, cy: cyL, r: 12, fill: TEAL }),
+          elem('circle', { cx: exR, cy: cyL, r: 12, fill: TEAL })
+        )
+        extra.anim = 'run'
+      },
+      jam() {
+        screen.append(
+          arc(`M${exL - 12} ${cyL} Q${exL} ${cyL + 9} ${exL + 12} ${cyL}`),
+          arc(`M${exR - 12} ${cyL} Q${exR} ${cyL + 9} ${exR + 12} ${cyL}`)
+        )
+        topFx.append(txt(200, 78, 20, '♪', GOLD))
+        extra.dance = true
+      },
     }
 
     function setMood(m: Mood) {

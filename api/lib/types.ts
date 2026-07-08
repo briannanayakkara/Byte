@@ -49,6 +49,9 @@ export type Mood =
   | 'wave'
   | 'lookaround'
   | 'sit'
+  | 'skate'
+  | 'playball'
+  | 'jam'
 
 export interface ChatMessage {
   role: 'user' | 'assistant'
