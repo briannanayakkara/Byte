@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { clearSessionCookie, createSessionCookie, isAuthorized, verifyPassword } from './adminAuth.js'
+import { clearSessionCookie, createSessionCookie, isAuthorized, requireAuth, verifyPassword } from './adminAuth.js'
 
 function cookieHeaderFrom(setCookie: string): string {
   return setCookie.split(';')[0]
@@ -63,5 +63,29 @@ describe('adminAuth', () => {
   it('marks the cookie Secure on Vercel', () => {
     process.env.VERCEL = '1'
     expect(createSessionCookie()).toContain('Secure')
+  })
+
+  it('rejects a malformed %-escape in the cookie header without throwing', () => {
+    expect(() =>
+      isAuthorized({ headers: { cookie: 'other=%; byte_admin_session=garbage' } })
+    ).not.toThrow()
+    expect(isAuthorized({ headers: { cookie: 'other=%; byte_admin_session=garbage' } })).toBe(false)
+  })
+
+  it('rejects a valid session without throwing when ADMIN_PASSWORD is unset', () => {
+    const setCookie = createSessionCookie()
+    const cookie = cookieHeaderFrom(setCookie)
+    delete process.env.ADMIN_PASSWORD
+    expect(() => isAuthorized({ headers: { cookie } })).not.toThrow()
+    expect(isAuthorized({ headers: { cookie } })).toBe(false)
+  })
+
+  it('requireAuth returns false and responds 401 when unauthorized', () => {
+    const json = vi.fn()
+    const status = vi.fn().mockReturnValue({ json })
+    const res = { status, json, setHeader: vi.fn() }
+    expect(requireAuth({ headers: {} }, res)).toBe(false)
+    expect(status).toHaveBeenCalledWith(401)
+    expect(json).toHaveBeenCalledWith({ error: 'unauthorized' })
   })
 })

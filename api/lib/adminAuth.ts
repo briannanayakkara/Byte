@@ -65,7 +65,15 @@ function parseCookies(header: string | undefined): Record<string, string> {
     const eq = part.indexOf('=')
     if (eq === -1) continue
     const key = part.slice(0, eq).trim()
-    if (key) out[key] = decodeURIComponent(part.slice(eq + 1).trim())
+    if (!key) continue
+    // A malformed %-escape in ANY cookie on the header (ours or a third
+    // party's) must not take down parsing of the rest -- skip just that
+    // entry rather than letting decodeURIComponent's URIError propagate.
+    try {
+      out[key] = decodeURIComponent(part.slice(eq + 1).trim())
+    } catch {
+      continue
+    }
   }
   return out
 }
@@ -83,7 +91,17 @@ export function isAuthorized(req: ApiRequest): boolean {
   const expiresAtMs = Number(expiresAtRaw)
   if (!Number.isFinite(expiresAtMs) || Date.now() >= expiresAtMs) return false
 
-  const expected = Buffer.from(sign(expiresAtRaw), 'hex')
+  // A read-only auth check on an already-established session must fail
+  // closed, not throw, if the server is misconfigured (e.g. ADMIN_PASSWORD
+  // unset/removed after the cookie was issued) -- unlike verifyPassword and
+  // createSessionCookie, which are on the login path and should keep
+  // throwing loudly at setup time.
+  let expected: Buffer
+  try {
+    expected = Buffer.from(sign(expiresAtRaw), 'hex')
+  } catch {
+    return false
+  }
   const actual = Buffer.from(signature, 'hex')
   if (expected.length !== actual.length) return false
   return crypto.timingSafeEqual(expected, actual)
