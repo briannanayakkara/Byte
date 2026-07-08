@@ -4,7 +4,7 @@
 <div style="display:flex;justify-content:center;margin-bottom:1rem;">
   <svg id="bot" width="320" height="300" viewBox="0 0 320 300" role="img" style="max-width:74vw;">
     <title>Byte robot, all moods</title>
-    <desc>A dark navy robot whose glowing screen eyes and effects change across many EMO-style moods, and who can walk around, run, jump, flip, spin, moonwalk, wiggle, stretch, wave and sit, with floaty detached hands. He keeps a skateboard, a ball and a boombox on the stage and plays with them by himself when bored — fumbles included.</desc>
+    <desc>A dark navy robot whose glowing screen eyes and effects change across many EMO-style moods, and who can walk around, run, jump, flip, spin, moonwalk, wiggle, stretch, wave and sit, with floaty detached hands. He keeps a skateboard, a ball and a boombox on the stage and plays with them by himself when bored — fumbles included. He watches and chases your cursor, and reacts to being poked.</desc>
     <g id="fx"></g>
     <g id="toys">
       <g id="boomB">
@@ -75,6 +75,9 @@
   const TEAL='#3FE0D0', PINK='#F2749A', GOLD='#F2C94C', DIM='#3A3F52', RED='#E24B6A';
   const exL=135, exR=185, cyL=118;
   let mood='happy', t=0, last=performance.now(), blinkT=1500, extra={};
+  let simT=0, wx=0, lastTx=0, interactive=true, pendingPokeV=0, pokeN=0, lastPokeT=-9e9;
+  const pointer={x:160,y:140,t:-9e9,in:false};
+  const follow={on:false,arr:0};
 
   function el(tag,a){const e=document.createElementNS(NS,tag);for(const k in a)e.setAttribute(k,a[k]);return e;}
   function clear(g){while(g.firstChild)g.removeChild(g.firstChild);}
@@ -165,6 +168,12 @@
       );
       extra.tilt=9;extra.slow=true;extra.light=DIM;extra.deepZ=true;
     },
+    // POKE (hidden, not in GROUPS): quick one-shot reaction to being clicked, then returns to previous mood
+    poke(){
+      if(pendingPokeV===1){screen.append(el('circle',{cx:exL,cy:cyL,r:13,fill:TEAL}),el('circle',{cx:exR,cy:cyL,r:13,fill:TEAL}));const o=txt(208,72,22,'!',GOLD);o.setAttribute('id','oopsT');o.setAttribute('opacity',0);topFx.append(o);}
+      else if(pendingPokeV===2){screen.append(el('path',{d:`M${exL-13} ${cyL-6} L${exL+13} ${cyL-1}`,stroke:TEAL,'stroke-width':6,'stroke-linecap':'round'}),eye(exL,cyL+2,22,12,5),el('path',{d:`M${exR-13} ${cyL-1} L${exR+13} ${cyL-6}`,stroke:TEAL,'stroke-width':6,'stroke-linecap':'round'}),eye(exR,cyL+2,22,12,5));}
+      else{screen.append(arc(`M${exL-12} ${cyL-4} Q${exL} ${cyL+8} ${exL+12} ${cyL-4}`,TEAL,6),arc(`M${exR-12} ${cyL-4} Q${exR} ${cyL+8} ${exR+12} ${cyL-4}`,TEAL,6));topFx.append(txt(160,74,16,'hehe!',GOLD));}
+    },
     birthday(){screen.append(arc(`M${exL-12} ${cyL} Q${exL} ${cyL+9} ${exL+12} ${cyL}`,TEAL,6),arc(`M${exR-12} ${cyL} Q${exR} ${cyL+9} ${exR+12} ${cyL}`,TEAL,6));
       const c=el('g',{});c.append(el('rect',{x:160-16,y:132,width:32,height:16,rx:3,fill:PINK}),el('rect',{x:160-16,y:140,width:32,height:8,fill:'#F4A0BA'}),el('rect',{x:160-1.5,y:120,width:3,height:12,fill:GOLD}));c.append(el('ellipse',{id:'flame',cx:160,cy:118,rx:3,ry:5,fill:GOLD}));topFx.append(c);extra.confetti=true;},
     christmas(){screen.append(arc(`M${exL-12} ${cyL} Q${exL} ${cyL+9} ${exL+12} ${cyL}`,'#7BE58F',6),arc(`M${exR-12} ${cyL} Q${exR} ${cyL+9} ${exR+12} ${cyL}`,'#F27A7A',6));
@@ -187,6 +196,7 @@
   let hearts=[], confetti=[], snow=[], zzz=[], dusts=[], lastAir=0;
   function setMood(m){
     mood=m; t=0;
+    follow.on=false; if(m==='skate'||m==='playball'||m==='jam')wx=0;
     document.querySelectorAll('[data-m]').forEach(b=>{const on=b.dataset.m===m;b.style.borderColor=on?'#3FE0D0':'#2E3547';b.style.color=on?'#3FE0D0':'#dfe3ea';});
     clear(screen); clear(topFx); clear(fx); extra={};
     hearts=[]; confetti=[]; snow=[]; zzz=[]; dusts=[]; lastAir=0;
@@ -207,7 +217,7 @@
   });
 
   function renderFrame(dt){
-    t+=dt;
+    t+=dt; simT+=dt;
     const slow=extra.slow?1600:620;
     const amp=(mood==='excited'||mood==='dancing')?7:extra.slow?1.5:3;
     let ty=Math.sin(t/slow)*amp, rot=Math.sin(t/1200)*0.8, rotCy=220;
@@ -414,6 +424,29 @@
       const c=(t%2600)/2600, j=kf(c,[[0.5,0],[0.58,1],[0.66,0]]); // ...and throws a little jab
       if(Math.floor(t/2600)%2===0){hL.dx+=j*26;hL.dy+=j*4;}else{hR.dx-=j*26;hR.dy+=j*4;}
     }
+    else if(P==='poke'){                                     // poked! three possible reactions
+      const q=Math.min(1,t/950), v=extra.v||0;
+      face=extra.side||1;
+      if(v===0){                                             // tickled
+        sxb=1+Math.sin(t/45)*0.05*(1-q);ty=-Math.abs(Math.sin(t/90))*5*(1-q);
+        rot=Math.sin(t/70)*3*(1-q);headAdd+=Math.sin(t/60)*4*(1-q);
+        hL={dx:-9,dy:6};hR={dx:9,dy:6};
+      }else if(v===1){                                       // startled hop
+        ty=kf(q,[[0,0],[0.18,-26],[0.42,0],[0.55,-6],[0.68,0],[1,0]]);
+        headDy+=kf(q,[[0,0],[0.12,-3],[0.42,2],[0.6,0]]);
+        hL={dx:-16,dy:-30};hR={dx:16,dy:-30};fL={dx:-4,dy:0};fR={dx:4,dy:0};
+        if(q>0.4&&!extra._d){extra._d=1;dust(160+lastTx);}
+        const oo=document.getElementById('oopsT');
+        if(oo)oo.setAttribute('opacity',kf(q,[[0,0],[0.08,1],[0.6,1],[0.82,0]]).toFixed(2));
+      }else{                                                 // enough. the swat.
+        rot=kf(q,[[0,0],[0.25,-6],[0.5,4],[1,0]]);rotCy=252;
+        hR={dx:kf(q,[[0,8],[0.3,36],[0.55,-6],[0.85,10]]),dy:kf(q,[[0,-8],[0.3,-18],[0.55,-4],[1,-6]])};
+        hL={dx:-10,dy:2};
+        fR={dx:kf(q,[[0.48,0],[0.6,7],[0.72,0]]),dy:kf(q,[[0.48,0],[0.6,-9],[0.72,0]])};
+        headAdd+=kf(q,[[0,0],[0.3,7],[0.7,-3],[1,0]]);
+      }
+      if(t>980){const b=extra.back;setMood(b&&M[b]?b:'neutral');return;}
+    }
     else if(P==='bored'){                                    // signature bit: dramatic slump + heavy sigh
       const p=(t%5200)/5200;
       if(t>8600){setMood(['skate','playball','jam'][Math.floor(Math.random()*3)]);return;} // fine. he'll entertain HIMSELF.
@@ -605,6 +638,36 @@
     dusts=dusts.filter(d=>{if(d.life<=0){d.el.remove();return false;}return true;});
 
     // ---- apply transforms ----
+    // ---- cursor interactivity: watch, chase, arrive ----
+    const FOLLOW_OK=(P==='happy'||P==='excited'||P==='content'||P==='neutral'||P==='curious'||P==='confused'||P==='laughing'||P==='lovestruck'||P==='bored'||P==='proud'||P==='smug'||P==='wave'||P==='walk'||P==='run'||P==='wiggle'||P==='lookaround');
+    const fresh=simT-pointer.t, byteX=160+lastTx;
+    if(interactive&&pointer.in&&fresh<2400&&FOLLOW_OK&&!follow.on){
+      const d=pointer.x-byteX;
+      headAdd+=Math.max(-6,Math.min(6,d*0.05));                        // he watches your cursor
+      if(Math.abs(d)>34&&Math.abs(d)<132&&Math.abs(pointer.y-176)<130){follow.on=true;follow.arr=0;}
+    }
+    if(follow.on&&(!interactive||!pointer.in||fresh>2400||!FOLLOW_OK))follow.on=false;
+    if(follow.on){
+      const tgt=Math.max(-76,Math.min(76,pointer.x-160)), dd=tgt-wx;
+      if(Math.abs(dd)>(follow.arr>0?30:16)){
+        const run=Math.abs(dd)>90, dir=dd<0?-1:1;
+        wx+=dir*Math.min(Math.abs(dd),(run?150:66)*dt/1000);
+        face=dir;rot=run?5:3;
+        gait(t/(run?95:140),run?12:10,run?12:10);
+        ty=-Math.abs(Math.sin(t/(run?95:140)))*(run?5:3);
+        follow.arr=0;
+      }else{
+        follow.arr+=dt;
+        const d2=pointer.x-(160+wx);
+        if(Math.abs(d2)>7)face=d2<0?-1:1;
+        headAdd+=Math.max(-7,Math.min(7,d2*0.08));                     // arrived: tracks it like a cat
+        if(follow.arr<720)ty=-Math.abs(Math.sin(follow.arr/115))*4;    // happy little hop-hop
+        fL={dx:0,dy:0};fR={dx:0,dy:0};
+      }
+      tx=wx;
+    } else if(A==='skate'||A==='ballP'||A==='jam'){wx=0;}
+    else {tx=Math.max(-76,Math.min(76,tx+wx));if(!pointer.in||fresh>3600)wx*=Math.pow(0.99965,dt);}
+    lastTx=tx;
     rootG.setAttribute('transform',face<0?`translate(${tx} 0) translate(320 0) scale(-1 1)`:`translate(${tx} 0)`);
     let bt=`translate(0 ${ty})`;
     if(flip)bt+=` rotate(${flip%360} 160 168)`;
@@ -656,11 +719,31 @@
     const flame=document.getElementById('flame');if(flame){flame.setAttribute('ry',4+Math.sin(t/120)*1.5);}
     if(extra.earPulse){const o=0.5+Math.abs(Math.sin(t/300))*0.5;lightL.setAttribute('opacity',o);lightR.setAttribute('opacity',o);}
   }
+  function poke(px,forceV){
+    if(mood==='poke'&&t<380)return;
+    const back=(mood==='poke')?(extra.back||'neutral'):mood;
+    pokeN=(simT-lastPokeT<4200)?pokeN+1:1; lastPokeT=simT;
+    const v=(forceV!=null)?forceV:(pokeN>=3?2:Math.floor(Math.random()*2));   // keep poking and he WILL swat
+    pendingPokeV=v;
+    const side=(px!=null&&px<160+lastTx)?-1:1;
+    setMood('poke'); extra.back=back; extra.v=v; extra.side=side;
+  }
+  const bot=document.getElementById('bot');
+  const svgPt=e=>{const r=bot.getBoundingClientRect();if(!r.width||!r.height)return null;
+    const s=Math.min(r.width/320,r.height/300);
+    return{x:(e.clientX-r.left-(r.width-320*s)/2)/s, y:(e.clientY-r.top-(r.height-300*s)/2)/s};};
+  const hitBot=p=>!!p&&Math.abs(p.x-(160+lastTx))<62&&p.y>54&&p.y<284;
+  bot.addEventListener('pointermove',e=>{if(!interactive)return;const p=svgPt(e);if(!p)return;
+    pointer.x=p.x;pointer.y=p.y;pointer.t=simT;pointer.in=true;
+    bot.style.cursor=hitBot(p)?'pointer':'default';});
+  bot.addEventListener('pointerleave',()=>{pointer.in=false;});
+  bot.addEventListener('pointerdown',e=>{if(!interactive)return;const p=svgPt(e);
+    if(hitBot(p))poke(p.x);});
   function loop(now){const dt=Math.min(50,now-last);last=now;renderFrame(dt);if(!window.__byteManual)requestAnimationFrame(loop);}
   requestAnimationFrame(loop);
   // Small public API so the host app (or an LLM) can drive Byte programmatically:
   //   Byte.set('flip')  Byte.list()  -> all mood/move names
-  window.Byte={set:setMood,list:()=>GROUPS.flatMap(g=>g[1]),current:()=>mood,_frame:renderFrame,_manual:v=>{window.__byteManual=v;if(!v){last=performance.now();requestAnimationFrame(loop);}}};
+  window.Byte={set:setMood,list:()=>GROUPS.flatMap(g=>g[1]),current:()=>mood,pos:()=>160+lastTx,poke:v=>poke(null,typeof v==='number'?v:null),interactive:b=>{interactive=b!==false;if(!interactive){follow.on=false;pointer.in=false;}},_pointer:(x,y)=>{pointer.x=x;pointer.y=(y==null?140:y);pointer.t=simT;pointer.in=true;},_frame:renderFrame,_manual:v=>{window.__byteManual=v;if(!v){last=performance.now();requestAnimationFrame(loop);}}};
   setMood('walk');
 })();
 </script>
