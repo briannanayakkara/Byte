@@ -1,11 +1,32 @@
 {
+  "permissions": {
+    "allow": [
+  "Bash(npm run dev:*)",
+    "Bash(npm run build:*)",
+    "Bash(npm run lint:*)",
+    "Bash(git status:*)",
+    "Bash(git diff:*)",
+    "Bash(git log:*)",
+    "Bash(git add:*)",
+    "Bash(git commit:*)"
+    ]
+  },
+  "enabledMcpjsonServers": [
+    "supabase"
+  ],
   "hooks": {
     "PreToolUse": [
       {
         "matcher": "Bash",
         "hooks": [
-          { "type": "command", "command": "node .claude/hooks/block-dangerous-ops.mjs" },
-          { "type": "command", "command": "node .claude/hooks/pre-commit-lint.mjs" }
+          {
+            "type": "command",
+            "command": "node .claude/hooks/block-dangerous-ops.mjs"
+          },
+          {
+            "type": "command",
+            "command": "node .claude/hooks/pre-commit-lint.mjs"
+          }
         ]
       }
     ],
@@ -13,19 +34,13 @@
       {
         "matcher": "Edit|Write",
         "hooks": [
-          { "type": "command", "command": "node .claude/hooks/post-write-format.mjs" }
+          {
+            "type": "command",
+            "command": "node .claude/hooks/post-write-format.mjs"
+          }
         ]
       }
     ]
   },
-  "permissions": {
-    "allow": [
-      "Bash(npm run dev:*)",
-      "Bash(npm run build:*)",
-      "Bash(npm run lint:*)",
-      "Bash(git status:*)",
-      "Bash(git diff:*)",
-      "Bash(git log:*)"
-    ]
-  }
+  "enableAllProjectMcpServers": true
 }
