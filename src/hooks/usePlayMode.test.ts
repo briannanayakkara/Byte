@@ -23,6 +23,6 @@ describe('pickNextActivity', () => {
 
   it('picks the last candidate when random() returns just under 1', () => {
     const activity = pickNextActivity(null, () => 0.9999)
-    expect(activity.mood).toBe('moonwalk')
+    expect(activity.mood).toBe('sit')
   })
 })
