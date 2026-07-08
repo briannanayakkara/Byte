@@ -54,9 +54,15 @@ const FACT_VISIBLE_MS = 4_500
 // standing there, and keeps cycling through moves until the user actually
 // sends something. "wave" is deliberately excluded -- that's reserved for
 // the greeting-on-open moment, not random idling.
-const IDLE_MOVES: Mood[] = ['dancing', 'flip', 'backflip', 'spin', 'jump', 'wiggle', 'stretch', 'lookaround', 'walk', 'run', 'moonwalk', 'sit']
-const IDLE_MOVE_MIN_DELAY_MS = 15_000
-const IDLE_MOVE_MAX_DELAY_MS = 35_000
+//
+// Per docs/byte-base-personality.md §3, "moves are rare flourishes, not
+// defaults" -- calm poses (lookaround/stretch/sit) are weighted heavier
+// than energetic ones here, and the most intense flourishes (backflip,
+// run, jump) are left out of ambient idling entirely (still reachable via
+// an explicit chat request, or during "Go play").
+const IDLE_MOVES: Mood[] = ['lookaround', 'lookaround', 'stretch', 'stretch', 'sit', 'sit', 'wiggle', 'walk', 'moonwalk', 'dancing', 'spin', 'flip']
+const IDLE_MOVE_MIN_DELAY_MS = 30_000
+const IDLE_MOVE_MAX_DELAY_MS = 75_000
 
 function App() {
   const [messages, setMessages] = useState<ChatMessage[]>([])
