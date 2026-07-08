@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { parseModelOutput } from './parseModelOutput.js'
+import { parseModelOutput, stripTrailingQuestion } from './parseModelOutput.js'
 
 describe('parseModelOutput', () => {
   it('passes through a well-formed response unchanged', () => {
@@ -79,5 +79,29 @@ describe('parseModelOutput', () => {
       newFacts: [],
       personalityNotes: 'existing shared context',
     })
+  })
+})
+
+describe('stripTrailingQuestion', () => {
+  it('flattens a trailing rhetorical question into a statement', () => {
+    expect(stripTrailingQuestion('Isn\'t that cool?')).toBe('Isn\'t that cool.')
+  })
+
+  it('flattens a trailing tag question with a comma', () => {
+    expect(stripTrailingQuestion('Amazing, right?')).toBe('Amazing, right.')
+  })
+
+  it('collapses repeated trailing question marks to a single period', () => {
+    expect(stripTrailingQuestion('No way, right??')).toBe('No way, right.')
+  })
+
+  it('leaves a statement with no trailing question mark unchanged', () => {
+    expect(stripTrailingQuestion('Beetles are wild little guys.')).toBe('Beetles are wild little guys.')
+  })
+
+  it('does not touch a question mark in the middle of the text', () => {
+    expect(stripTrailingQuestion('Did you know? Octopuses have three hearts.')).toBe(
+      'Did you know? Octopuses have three hearts.'
+    )
   })
 })

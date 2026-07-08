@@ -43,3 +43,13 @@ export function parseModelOutput(
     return { reply: rawText, mood: 'neutral', newFacts: [], personalityNotes: fallbackPersonalityNotes }
   }
 }
+
+// Small local models don't reliably honor "don't ask a question" in the
+// fact monologue (buildFactInstruction, prompt.ts) -- verified live: ~2/5
+// replies still ended in a rhetorical tag question ("Isn't that cool?",
+// "Amazing, right?"). Deterministically flattens a trailing question into
+// a statement rather than leaving it to chance, same principle as
+// ensureNameMentioned (chat.ts).
+export function stripTrailingQuestion(reply: string): string {
+  return /\?+\s*$/.test(reply) ? reply.replace(/\?+\s*$/, '.') : reply
+}

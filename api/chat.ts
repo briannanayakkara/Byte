@@ -10,7 +10,7 @@ import { callLLM } from './lib/llm.js'
 import { buildFactInstruction, buildGreetingInstruction, buildMemoryBlock, buildMilestoneReminder, buildMoveRequestReminder, buildOutputFormatInstructions, buildSpecialDayLine } from './lib/prompt.js'
 import { canCatchCold, computeEnergy, computeStreak, newMilestones, relationshipLevel } from './lib/relationship.js'
 import { loadActiveBasePersonality } from './lib/personality.js'
-import { parseModelOutput } from './lib/parseModelOutput.js'
+import { parseModelOutput, stripTrailingQuestion } from './lib/parseModelOutput.js'
 import { detectRequestedMood } from './lib/detectRequestedMood.js'
 
 interface ApiRequest {
@@ -119,7 +119,11 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     // The greeting prompt asks the model to always use the person's name,
     // but small local models don't reliably follow that -- guarantee it
     // deterministically rather than leaving it to chance.
-    const reply = isGreeting ? ensureNameMentioned(parsed.reply, memory.user.name) : parsed.reply
+    const reply = isGreeting
+      ? ensureNameMentioned(parsed.reply, memory.user.name)
+      : isFact
+        ? stripTrailingQuestion(parsed.reply)
+        : parsed.reply
 
     if (isGreeting) {
       try {

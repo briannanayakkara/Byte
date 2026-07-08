@@ -156,10 +156,13 @@ name attached. One line, no question you're answering.`
 // (same personality/context as every other request) but deliberately not
 // persisted by the caller.
 export function buildFactInstruction(): string {
-  return `The person isn't talking to you right now -- you're off playing on
-your own and just feel like sharing something. Say ONE short, random,
-in-character fun fact, observation, or aside -- not a reply to anything,
-not a question, just a little spontaneous thought out loud. One line,
+  return `The person isn't there right now -- you're off playing on your own
+and just feel like saying something out loud. Say ONE short, random,
+in-character fun fact, observation, or aside. This is a MONOLOGUE, not a
+conversation: nobody is listening and nobody will answer. OVERRIDE: even
+though you're naturally curious and normally love asking questions, do NOT
+ask a question here -- no question marks, no "guess what", no "what do you
+think", nothing aimed at them. Just state your little thought. One line,
 playful, matches your voice.`
 }
 

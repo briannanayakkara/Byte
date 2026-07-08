@@ -88,7 +88,13 @@ describe('buildFactInstruction', () => {
   it('asks for a single spontaneous fact, not a reply', () => {
     const text = buildFactInstruction()
     expect(text).toContain('fun fact')
-    expect(text).toContain('not a reply')
+    expect(text).toContain('MONOLOGUE')
+  })
+
+  it('overrides the curious trait so it does not ask the person a question', () => {
+    const text = buildFactInstruction()
+    expect(text).toContain('OVERRIDE')
+    expect(text).toContain('ask a question')
   })
 })
 
