@@ -58,10 +58,15 @@ export function AdminPanel({ initialData, onClose }: AdminPanelProps) {
           </div>
         </header>
 
-        {data.user && <UserSection user={data.user} onSaved={() => reload()} />}
+        {data.user && <UserSection key={data.user.id} user={data.user} onSaved={() => reload()} />}
         {data.selectedUserId && (
           <>
-            <CharacterStateSection userId={data.selectedUserId} state={data.characterState} onSaved={() => reload()} />
+            <CharacterStateSection
+              key={data.selectedUserId}
+              userId={data.selectedUserId}
+              state={data.characterState}
+              onSaved={() => reload()}
+            />
             <FactsSection userId={data.selectedUserId} facts={data.facts} onSaved={() => reload()} />
             <ImportantDatesSection userId={data.selectedUserId} dates={data.importantDates} onSaved={() => reload()} />
           </>
