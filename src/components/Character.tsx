@@ -14,6 +14,10 @@ import type { Mood } from '../types'
 // once, runs its own animation loop, and exposes `window.Byte = { set, list }`
 // as the only way to drive it (App.tsx calls `window.Byte?.set(...)`
 // instead of passing a `mood` prop).
+// Upgraded to v5 (reference/character-prototypes/byte_robot_v5.html):
+// background toys, three scripted Play routines (skate/playball/jam) with
+// autonomous bored-triggered play, and native cursor-follow/click-poke
+// interactivity.
 const NS = 'http://www.w3.org/2000/svg'
 const TEAL = '#3FE0D0'
 const PINK = '#F2749A'
@@ -154,6 +158,8 @@ export function Character() {
     let pokeCount = 0
     let lastPokeTime = -9e9
     const follow = { on: false, arr: 0 }
+    let wx = 0
+    const pointer = { x: 160, y: 140, t: -9e9, in: false }
 
     function elem(tag: string, attrs: Record<string, string | number>): SVGElement {
       const e = document.createElementNS(NS, tag) as SVGElement
@@ -659,6 +665,7 @@ export function Character() {
       currentMood = m
       t = 0
       follow.on = false
+      if (m === 'skate' || m === 'playball' || m === 'jam') wx = 0
       clearGroup(screen)
       clearGroup(topFx)
       clearGroup(fx)
@@ -690,6 +697,13 @@ export function Character() {
       list: () => (Object.keys(M) as Mood[]).filter((m) => m !== 'poke'),
       pos: () => 160 + lastTx,
       poke: (variant?: number) => poke(null, typeof variant === 'number' ? variant : null),
+      interactive: (enabled: boolean) => {
+        interactive = enabled !== false
+        if (!interactive) {
+          follow.on = false
+          pointer.in = false
+        }
+      },
     }
 
     function renderFrame(dt: number) {
@@ -1969,6 +1983,65 @@ export function Character() {
         return true
       })
 
+      // ---- cursor interactivity: watch, chase, arrive ----
+      const byteX = 160 + lastTx
+      const followOk =
+        P === 'happy' ||
+        P === 'excited' ||
+        P === 'content' ||
+        P === 'neutral' ||
+        P === 'curious' ||
+        P === 'confused' ||
+        P === 'laughing' ||
+        P === 'lovestruck' ||
+        P === 'bored' ||
+        P === 'proud' ||
+        P === 'smug' ||
+        P === 'wave' ||
+        P === 'walk' ||
+        P === 'run' ||
+        P === 'wiggle' ||
+        P === 'lookaround'
+      const fresh = simT - pointer.t
+      if (interactive && pointer.in && fresh < 2400 && followOk && !follow.on) {
+        const d = pointer.x - byteX
+        headAdd += Math.max(-6, Math.min(6, d * 0.05))
+        if (Math.abs(d) > 34 && Math.abs(d) < 132 && Math.abs(pointer.y - 176) < 130) {
+          follow.on = true
+          follow.arr = 0
+        }
+      }
+      if (follow.on && (!interactive || !pointer.in || fresh > 2400 || !followOk)) follow.on = false
+      if (follow.on) {
+        const tgt = Math.max(-76, Math.min(76, pointer.x - 160))
+        const dd = tgt - wx
+        if (Math.abs(dd) > (follow.arr > 0 ? 30 : 16)) {
+          const run = Math.abs(dd) > 90
+          const dir = dd < 0 ? -1 : 1
+          wx += dir * Math.min(Math.abs(dd), ((run ? 150 : 66) * dt) / 1000)
+          face = dir
+          rot = run ? 5 : 3
+          gait(t / (run ? 95 : 140), run ? 12 : 10, run ? 12 : 10)
+          ty = -Math.abs(Math.sin(t / (run ? 95 : 140))) * (run ? 5 : 3)
+          follow.arr = 0
+        } else {
+          follow.arr += dt
+          const d2 = pointer.x - (160 + wx)
+          if (Math.abs(d2) > 7) face = d2 < 0 ? -1 : 1
+          headAdd += Math.max(-7, Math.min(7, d2 * 0.08))
+          if (follow.arr < 720) ty = -Math.abs(Math.sin(follow.arr / 115)) * 4
+          fL = { dx: 0, dy: 0 }
+          fR = { dx: 0, dy: 0 }
+        }
+        tx = wx
+      } else if (A === 'skate' || A === 'ballP' || A === 'jam') {
+        wx = 0
+      } else {
+        tx = Math.max(-76, Math.min(76, tx + wx))
+        if (!pointer.in || fresh > 3600) wx *= Math.pow(0.99965, dt)
+      }
+      lastTx = tx
+
       // ---- apply transforms ----
       rootG.setAttribute('transform', face < 0 ? `translate(${tx} 0) translate(320 0) scale(-1 1)` : `translate(${tx} 0)`)
       let bt = `translate(0 ${ty})`
@@ -2199,6 +2272,22 @@ export function Character() {
     }
     svg.addEventListener('pointerdown', handlePointerDown)
 
+    function handlePointerMove(e: PointerEvent) {
+      if (!interactive) return
+      const p = svgPoint(e)
+      if (!p) return
+      pointer.x = p.x
+      pointer.y = p.y
+      pointer.t = simT
+      pointer.in = true
+      if (svg) svg.style.cursor = hitCharacter(p) ? 'pointer' : 'default'
+    }
+    function handlePointerLeave() {
+      pointer.in = false
+    }
+    svg.addEventListener('pointermove', handlePointerMove)
+    svg.addEventListener('pointerleave', handlePointerLeave)
+
     function loop(now: number) {
       const dt = Math.min(50, now - last)
       last = now
@@ -2216,6 +2305,8 @@ export function Character() {
     return () => {
       cancelAnimationFrame(rafId)
       svg.removeEventListener('pointerdown', handlePointerDown)
+      svg.removeEventListener('pointermove', handlePointerMove)
+      svg.removeEventListener('pointerleave', handlePointerLeave)
       delete window.Byte
     }
     // Mount-once: this is the entire lifecycle of the component now that

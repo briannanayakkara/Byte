@@ -10,6 +10,7 @@ declare global {
       list(): Mood[]
       pos(): number
       poke(variant?: number): void
+      interactive(enabled: boolean): void
     }
   }
 }
