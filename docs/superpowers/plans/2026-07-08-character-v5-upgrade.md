@@ -15,6 +15,7 @@
 - **No app-side (`App.tsx`) changes at all.** Investigation confirmed every `setMood()` call already resets `follow.on = false` internally, so the existing idle-move timer and chat-reply mood-setting need zero changes to coexist with native interactivity.
 - **`'poke'` is a real `Mood` value, not purely internal** (a correction found during planning — see Task 4) — `window.Byte.current()` can genuinely return `'poke'` while a poke reaction plays, so it must exist in the `Mood` type, the same way `'listening'`/`'talking'` already exist in `Mood` but are excluded from `list()`/`SELECTABLE_MOODS`.
 - Every task must independently pass `npm run build`, `npm test`, and `npm run lint` before moving to the next — this file makes several passes over the same functions across tasks, and a broken intermediate state compounds fast in a single 1500+ line component.
+- **Known, accepted deviation from the task boundaries below:** Task 1's implementer found that `Character.tsx`'s `M` object (`Record<Mood, () => void>`) requires an entry for every `Mood` value immediately once Task 1 adds `skate`/`playball`/`jam` to that type — even though Task 1 was designed to touch only type files. It correctly added minimal placeholder `skate()`/`playball()`/`jam()` entries to `Character.tsx` to keep the build green. **Task 3 Step 3 replaces these placeholders** rather than inserting fresh entries (which would be a duplicate-object-key error) — this is already reflected in that step's instructions.
 
 ---
 
@@ -257,9 +258,9 @@ Immediately after the toy-position variables added in Task 2 (`let jamOn = false
       }
 ```
 
-- [ ] **Step 3: Add the three mood functions**
+- [ ] **Step 3: Replace the placeholder mood functions with the real implementations**
 
-In the `M` object, immediately after the existing `sit()` entry (the last Move), add:
+**Note on why placeholders exist:** Task 1 added `skate`/`playball`/`jam` to the `Mood` union, but `Character.tsx`'s `M` object is typed `Record<Mood, () => void>` — TypeScript's exhaustiveness check immediately required `M` to have all three keys the moment `Mood` gained them, even though the plan's Task 1 was only supposed to touch type files. Task 1's implementer correctly caught this build break and added minimal placeholder `skate()`/`playball()`/`jam()` entries (right after `sit()`) to keep the build green — this was a necessary, unplanned deviation, not an error. **This step replaces those placeholders with the real implementations — find the existing `skate()`/`playball()`/`jam()` entries in the `M` object (already present, right after `sit()`) and replace their bodies entirely** with:
 
 ```ts
       skate() {
