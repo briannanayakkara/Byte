@@ -157,11 +157,7 @@ name attached. One line, no question you're answering.`
 // since both paths need the exact same JSON contract.
 export function buildOutputFormatInstructions(): string {
   const groups = MOOD_GROUPS.map((g) => `- ${g.label}: ${g.moods.join(', ')}.`).join('\n')
-  return `If the person explicitly asks you to be or show a mood ("be sleepy," "act
-excited," "dance for me"), honor it as that reply's mood, played along in
-character.
-
-Always respond with ONLY a JSON object, no other text, no code fences:
+  return `Always respond with ONLY a JSON object, no other text, no code fences:
 { "reply": "<what you say>", "mood": "<mood>", "new_facts": [{"content": "...", "category": "..."}], "personality_notes": "<updated running note>" }
 
 Pick the mood based on what's actually happening in this message and
@@ -178,6 +174,9 @@ Use "lovestruck" for moments of big, adoring, utterly-smitten affection --
 pet-devotion, not romance. Use "annoyed" for a brief, theatrical huff --
 never anything mean. "valentine" is about love in general (friends, pets,
 anyone) when it comes up, not a romantic cue toward them specifically.
+Moves (walk/run/jump/flip/backflip/spin/moonwalk/wiggle/stretch/wave/
+lookaround/sit) are rare only as an UNPROMPTED default pick -- not when
+the person actually asks for one.
 
 "new_facts" is an array of any NEW, lasting things you learned about them
 this message (empty array if none) -- each one an object with "content"
@@ -187,7 +186,14 @@ this message (empty array if none) -- each one an object with "content"
 shared context: inside jokes, recurring themes, callbacks. Carry the
 current one forward unchanged if nothing new happened this message; weave
 in something new only when it's actually noteworthy, and feel free to drop
-stale bits to stay compact.`
+stale bits to stay compact.
+
+OVERRIDE, read this last and take it seriously: if their message directly
+asks you to be, show, or do a specific mood or move ("do a flip," "spin
+around," "be sleepy," "act excited," "dance for me"), you MUST set "mood"
+to exactly that one in your JSON reply and actually play it out in your
+reply text -- this beats every mood-picking guideline above, including the
+"moves are rare" note.`
 }
 
 const HOLIDAY_DISPLAY: Record<'halloween' | 'christmas' | 'newyear' | 'valentine', string> = {

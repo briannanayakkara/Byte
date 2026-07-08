@@ -11,6 +11,7 @@ import { buildGreetingInstruction, buildMemoryBlock, buildMilestoneReminder, bui
 import { canCatchCold, computeEnergy, computeStreak, newMilestones, relationshipLevel } from './lib/relationship.js'
 import { loadActiveBasePersonality } from './lib/personality.js'
 import { parseModelOutput } from './lib/parseModelOutput.js'
+import { detectRequestedMood } from './lib/detectRequestedMood.js'
 
 interface ApiRequest {
   method?: string
@@ -97,7 +98,14 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     // response below, not a second round-trip.
     const rawText = await callLLM(systemPrompt, messages)
     const parsed = parseModelOutput(rawText, memory.state.personality_notes)
-    const { mood, newFacts, personalityNotes } = parsed
+    const { newFacts, personalityNotes } = parsed
+    // Small local models don't reliably honor an explicit request for a rare
+    // Situational/Moves mood ("do a flip", "dance for me") even with forceful
+    // prompt wording -- verified live: common moods honored requests 3/3,
+    // rare move words 0/3-0/5 despite the reply text itself narrating the
+    // move. Guarantee it deterministically rather than leaving it to chance,
+    // same principle as ensureNameMentioned below.
+    const mood = isGreeting ? parsed.mood : (detectRequestedMood(message) ?? parsed.mood)
     // The greeting prompt asks the model to always use the person's name,
     // but small local models don't reliably follow that -- guarantee it
     // deterministically rather than leaving it to chance.
