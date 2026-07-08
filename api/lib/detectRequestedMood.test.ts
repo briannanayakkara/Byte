@@ -39,4 +39,27 @@ describe('detectRequestedMood', () => {
     expect(detectRequestedMood("let's walk to the store")).toBeNull()
     expect(detectRequestedMood('please sit down')).toBeNull()
   })
+
+  it('detects a skate/skateboard request in various forms', () => {
+    expect(detectRequestedMood('go play with the skateboard')).toBe('skate')
+    expect(detectRequestedMood('can you skate for me')).toBe('skate')
+    expect(detectRequestedMood('do some skateboarding')).toBe('skate')
+  })
+
+  it('detects a play-ball request but not a bare mention of "ball"', () => {
+    expect(detectRequestedMood('play with the ball')).toBe('playball')
+    expect(detectRequestedMood('kick the ball')).toBe('playball')
+    expect(detectRequestedMood('go play ball')).toBe('playball')
+    expect(detectRequestedMood('drop the ball')).toBeNull()
+    expect(detectRequestedMood('that was a great ball game')).toBeNull()
+  })
+
+  it('detects a jam/boombox request but not a bare mention of "jam"', () => {
+    expect(detectRequestedMood('go play with the boombox')).toBe('jam')
+    expect(detectRequestedMood('jam out for me')).toBe('jam')
+    expect(detectRequestedMood('play some music')).toBe('jam')
+    expect(detectRequestedMood('play dj')).toBe('jam')
+    expect(detectRequestedMood("that's a jam")).toBeNull()
+    expect(detectRequestedMood('we hit a traffic jam')).toBeNull()
+  })
 })

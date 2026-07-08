@@ -21,6 +21,15 @@ const MOVE_REQUEST_PATTERNS: [RegExp, Mood][] = [
   [/\bmoonwalk(?:s|ing)?\b/i, 'moonwalk'],
   [/\bwiggle(?:s|d)?\b/i, 'wiggle'],
   [/\bdanc(?:e|es|ed|ing)\b/i, 'dancing'],
+  // v5 Play routines: "skate"/"skateboard" alone are distinctive enough
+  // (same bar as "flip"/"wiggle" above); ball/jam need a "play/kick with"
+  // or instrument-specific anchor since "ball"/"jam" alone are common
+  // enough in unrelated sentences ("that's a jam", "drop the ball").
+  [/\bskate(?:board)?(?:s|ing)?\b/i, 'skate'],
+  [/\b(?:play|kick)(?:s|ing)?\s+(?:with\s+)?(?:the\s+|his\s+|your\s+|a\s+)?ball\b/i, 'playball'],
+  [/\bboombox\b/i, 'jam'],
+  [/\bjam\s+out\b/i, 'jam'],
+  [/\bplay\s+(?:some\s+)?(?:music|dj)\b/i, 'jam'],
 ]
 
 export function detectRequestedMood(message: string): Mood | null {
