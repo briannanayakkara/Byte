@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { AdminOverlay } from './components/admin/AdminOverlay'
 import { Character } from './components/Character'
 import { ChatInput } from './components/ChatInput'
 import { MoodBubble } from './components/MoodBubble'
@@ -76,10 +77,17 @@ function App() {
   const hasBubbleRef = useRef(false)
   const playMode = usePlayMode()
   const isPlayingRef = useRef(false)
+  const [showAdmin, setShowAdmin] = useState(false)
 
   useEffect(() => {
     isPlayingRef.current = playMode.isPlaying
   }, [playMode.isPlaying])
+
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get('admin') === '1') {
+      setShowAdmin(true)
+    }
+  }, [])
 
   useEffect(() => {
     // Design doc §2/§3: wave immediately (a greeting gesture, not an
@@ -198,6 +206,18 @@ function App() {
         </button>
         <ChatInput onSend={handleSend} disabled={isSending} />
       </div>
+
+      {/* Hidden owner-only admin entry point -- nearly invisible on purpose,
+          see docs/superpowers/plans/2026-07-08-admin-panel.md. Top-left corner
+          is otherwise empty (Go play + chat input live at the bottom). */}
+      <button
+        type="button"
+        aria-label="admin"
+        onClick={() => setShowAdmin(true)}
+        className="absolute left-0 top-0 h-5 w-5 opacity-0"
+      />
+
+      {showAdmin && <AdminOverlay onClose={() => setShowAdmin(false)} />}
     </div>
   )
 }
