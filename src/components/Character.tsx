@@ -113,6 +113,16 @@ export function Character() {
     const footRb = q<SVGEllipseElement>('#footRb')
     const handL = q<SVGGElement>('#handL')
     const handR = q<SVGGElement>('#handR')
+    const skateB = q<SVGGElement>('#skateB')
+    const wspL = q<SVGLineElement>('#wspL')
+    const wspR = q<SVGLineElement>('#wspR')
+    const ballB = q<SVGGElement>('#ballB')
+    const ballSpin = q<SVGGElement>('#ballSpin')
+    const spkL = q<SVGGElement>('#spkL')
+    const spkR = q<SVGGElement>('#spkR')
+    const bn0 = q<SVGTextElement>('#bn0')
+    const bn1 = q<SVGTextElement>('#bn1')
+    const bn2 = q<SVGTextElement>('#bn2')
 
     let currentMood: Mood = 'neutral'
     let t = 0
@@ -653,6 +663,12 @@ export function Character() {
       let fR = { dx: 0, dy: 0 }
       let hL = { dx: Math.sin(t / 700) * 1.2, dy: Math.sin(t / 430) * 2.4 }
       let hR = { dx: -Math.sin(t / 640) * 1.2, dy: Math.sin(t / 430 + 1.7) * 2.4 }
+      let bdX = 84
+      let bdRot = 0
+      let ballX = 244
+      let ballY = 263
+      let spk = 1
+      let jamOn = false
       if (extra.shake) {
         ty += Math.sin(t / 45) * 2
         rot += Math.sin(t / 40) * 2
@@ -1354,6 +1370,28 @@ export function Character() {
       shadow.setAttribute('transform', `translate(160 278) scale(${ss.toFixed(3)} ${(0.5 + 0.5 * ss).toFixed(3)}) translate(-160 -278)`)
       shadow.setAttribute('opacity', (0.12 * (0.35 + 0.65 * ss)).toFixed(3))
 
+      // ---- toys ----
+      skateB.setAttribute('transform', `translate(${(bdX - 84).toFixed(2)} 0) rotate(${(bdRot % 360).toFixed(1)} 84 264)`)
+      const wsp = ((bdX * 5) % 360).toFixed(1)
+      wspL.setAttribute('transform', `rotate(${wsp} 70 269)`)
+      wspR.setAttribute('transform', `rotate(${wsp} 98 269)`)
+      ballB.setAttribute('transform', `translate(${(ballX - 244).toFixed(2)} ${(ballY - 263).toFixed(2)})`)
+      ballSpin.setAttribute('transform', `rotate(${(((ballX - 244) * 4) % 360).toFixed(1)} 244 263)`)
+      const sps = spk.toFixed(3)
+      spkL.setAttribute('transform', `translate(273 263) scale(${sps}) translate(-273 -263)`)
+      spkR.setAttribute('transform', `translate(295 263) scale(${sps}) translate(-295 -263)`)
+      const notes = [bn0, bn1, bn2]
+      notes.forEach((n, i) => {
+        if (jamOn) {
+          const c = (t / 1400 + i * 0.37) % 1
+          n.setAttribute('opacity', (Math.sin(Math.PI * c) * 0.9).toFixed(2))
+          n.setAttribute('y', (246 - 64 * c).toFixed(1))
+          n.setAttribute('x', (284 + Math.sin(c * 7 + i * 2) * 7).toFixed(1))
+        } else {
+          n.setAttribute('opacity', '0')
+        }
+      })
+
       let tilt = (extra.tilt || 0) + headAdd
       if (extra.wobble) tilt += Math.sin(t / 500) * 3
       if (extra.deepZ) tilt += Math.sin(t / 1600) * 2
@@ -1556,6 +1594,38 @@ export function Character() {
       <desc>A dark navy robot with floaty hands who can walk, run, jump, flip, spin, moonwalk, wave and more, with glowing screen eyes and effects across many EMO-style moods.</desc>
 
       <g id="fx" />
+      <g id="toys">
+        <g id="boomB">
+          <path d="M270 249 Q284 237 298 249" fill="none" stroke="#3A4470" strokeWidth={3.5} />
+          <rect x={262} y={248} width={44} height={28} rx={5} fill="#2C3350" stroke="#3A4470" strokeWidth={3} />
+          <g id="spkL">
+            <circle cx={273} cy={263} r={6.5} fill="#0A0C14" stroke="#3A4470" strokeWidth={2.5} />
+            <circle cx={273} cy={263} r={2} fill="#3FE0D0" />
+          </g>
+          <g id="spkR">
+            <circle cx={295} cy={263} r={6.5} fill="#0A0C14" stroke="#3A4470" strokeWidth={2.5} />
+            <circle cx={295} cy={263} r={2} fill="#3FE0D0" />
+          </g>
+          <circle cx={284} cy={253} r={2} fill="#F2C94C" />
+          <text id="bn0" x={278} y={244} fontSize={13} textAnchor="middle" fontFamily="sans-serif" fontWeight="bold" fill="#F2C94C" opacity={0}>
+            ♪
+          </text>
+          <text id="bn1" x={291} y={240} fontSize={11} textAnchor="middle" fontFamily="sans-serif" fontWeight="bold" fill="#F2C94C" opacity={0}>
+            ♫
+          </text>
+          <text id="bn2" x={284} y={248} fontSize={12} textAnchor="middle" fontFamily="sans-serif" fontWeight="bold" fill="#F2C94C" opacity={0}>
+            ♪
+          </text>
+        </g>
+        <g id="skateB">
+          <circle cx={70} cy={269} r={5.5} fill="#0A0C14" stroke="#3A4470" strokeWidth={2.5} />
+          <line id="wspL" x1={70} y1={269} x2={70} y2={264.5} stroke="#3FE0D0" strokeWidth={2} />
+          <circle cx={98} cy={269} r={5.5} fill="#0A0C14" stroke="#3A4470" strokeWidth={2.5} />
+          <line id="wspR" x1={98} y1={269} x2={98} y2={264.5} stroke="#3FE0D0" strokeWidth={2} />
+          <rect x={60} y={255} width={48} height={8} rx={4} fill="#2C3350" stroke="#3A4470" strokeWidth={2.5} />
+          <rect x={66} y={258} width={36} height={2.4} rx={1.2} fill="#3FE0D0" opacity={0.65} />
+        </g>
+      </g>
       <g id="rootG">
         <ellipse id="shadow" cx={160} cy={278} rx={66} ry={7} fill="#000000" opacity={0.12} />
         <g id="bobG">
@@ -1595,6 +1665,13 @@ export function Character() {
             <ellipse cx={220} cy={196} rx={13} ry={15} fill="#2C3350" />
             <ellipse cx={220} cy={196} rx={13} ry={15} fill="none" stroke="#3A4470" strokeWidth={3} />
           </g>
+        </g>
+      </g>
+      <g id="ballB">
+        <g id="ballSpin">
+          <circle cx={244} cy={263} r={12} fill="#2C3350" stroke="#3A4470" strokeWidth={3} />
+          <path d="M233.5 258 Q244 268 254.5 258" fill="none" stroke="#3FE0D0" strokeWidth={3.2} />
+          <circle cx={244} cy={255.5} r={2} fill="#F2C94C" />
         </g>
       </g>
     </svg>
